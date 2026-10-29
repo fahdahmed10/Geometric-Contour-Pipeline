@@ -21,11 +21,14 @@ def run_canny(manager: ImageManager, image_id: str, params: CannyParameters) -> 
 def run_hough(manager: ImageManager, edges, params: HoughParameters) -> dict[str, object]:
     accumulator, radii, thetas = hough_transform(edges, params.radius_res, params.theta_res)
     lines = detect_peaks(accumulator, radii, thetas, params.max_lines, params.vote_threshold)
+    overlay = draw_lines(edges, lines)
     return {
-        "output": matrix_to_data_url(draw_lines(edges, lines), color=True),
+        "output": matrix_to_data_url(overlay, color=True),
+        "_output_matrix": overlay,
         "steps": {
             "input_edges": serialize_step(edges),
             "accumulator": serialize_step(accumulator),
+            "line_overlay": serialize_step(overlay),
         },
         "lines": lines,
         "parameters": params.model_dump(),

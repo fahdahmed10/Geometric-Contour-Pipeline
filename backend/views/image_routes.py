@@ -3,7 +3,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from backend.controllers.processing import run_canny, run_hough
 from backend.core.image_codec import decode_image, matrix_to_data_url
 from backend.models.image_manager import image_manager
-from backend.models.schemas import CannyParameters, HoughParameters, ImageResponse, PipelineRequest, ProcessResponse
+from backend.models.schemas import CannyParameters, CannyRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
 
 router = APIRouter(tags=["image-processing"])
 
@@ -34,24 +34,32 @@ def get_image(image_id: str) -> dict[str, object]:
 
 
 @router.post("/images/{image_id}/canny", response_model=ProcessResponse)
-def process_canny(image_id: str, params: CannyParameters) -> ProcessResponse:
+def process_canny(image_id: str, params: CannyRequest) -> ProcessResponse:
     _session_or_404(image_id)
     try:
-        result = run_canny(image_manager, image_id, params)
-        image_manager.cache(image_id, "latest_canny", image_manager.get(image_id).cache[f"canny:{params.model_dump_json()}"]["edges"])
+        result = run_canny(image_manager, image_id, CannyParameters(**params.model_dump(exclude={"output_slot"})))
+        edges = image_manager.get(image_id).cache[f"canny:{CannyParameters(**params.model_dump(exclude={'output_slot'})).model_dump_json()}"]["edges"]
+        image_manager.cache(image_id, "latest_canny", edges)
+        image_manager.cache(image_id, f"output_{params.output_slot}", edges)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ProcessResponse(image_id=image_id, output=result["output"], steps=result["steps"], parameters=result["parameters"])
 
 
 @router.post("/images/{image_id}/hough")
-def process_hough(image_id: str, params: HoughParameters) -> dict[str, object]:
+def process_hough(image_id: str, params: HoughRequest) -> dict[str, object]:
     session = _session_or_404(image_id)
     edges = session.cache.get("latest_canny")
+    if params.input_source == "original":
+        original = session.original
+        edges = original[..., 0] * 0.299 + original[..., 1] * 0.587 + original[..., 2] * 0.114
+    elif params.input_source.startswith("output"):
+        edges = session.cache.get(f"output_{params.input_source[-1]}")
     if edges is None:
-        raise HTTPException(status_code=409, detail="Run Canny first or use the pipeline endpoint")
+        raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Hough input")
     try:
-        result = run_hough(image_manager, edges, params)
+        result = run_hough(image_manager, edges, HoughParameters(**params.model_dump(exclude={"input_source", "output_slot"})))
+        image_manager.cache(image_id, f"output_{params.output_slot}", result.pop("_output_matrix"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, **result}
