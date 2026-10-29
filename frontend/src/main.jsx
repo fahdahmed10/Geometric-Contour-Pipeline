@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -27,6 +27,7 @@ function StagePipeline({ title, steps, names }) {
 }
 
 function App() {
+  const [theme, setTheme] = useState(() => localStorage.getItem("contour-lab-theme") || "dark");
   const [imageId, setImageId] = useState(null);
   const [original, setOriginal] = useState(null);
   const [canny, setCanny] = useState(initialCanny);
@@ -42,6 +43,12 @@ function App() {
   const [houghResult, setHoughResult] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("light", theme === "light");
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("contour-lab-theme", theme);
+  }, [theme]);
 
   const update = (setter) => (event) => setter((state) => ({ ...state, [event.target.name]: Number(event.target.value) }));
 
@@ -89,7 +96,7 @@ function App() {
 
   const selectedInput = houghInput === "original" ? original : houghInput === "canny" ? cannyResult?.output : cannySlots[houghInput];
   return <main>
-    <header><div><p className="eyebrow">FROM-SCRATCH COMPUTER VISION / 02</p><h1>Contour <em>lab</em></h1><p className="lede">A deliberate workspace for tracing every transformation.</p></div><label className="upload">Upload image<input type="file" accept="image/*" onChange={upload} /></label></header>
+    <header><div><p className="eyebrow">FROM-SCRATCH COMPUTER VISION / 02</p><h1>Contour <em>lab</em></h1><p className="lede">A deliberate workspace for tracing every transformation.</p></div><div className="header-actions"><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><span aria-hidden="true">{theme === "dark" ? "☼" : "☾"}</span>{theme === "dark" ? "Light mode" : "Dark mode"}</button><label className="upload">Upload image<input type="file" accept="image/*" onChange={upload} /></label></div></header>
     {error && <div className="error">{error}</div>}
     <section className="source-strip"><div><p className="eyebrow">SOURCE MATRIX</p><h2>{imageId ? "Original image loaded" : "Upload an image to begin"}</h2></div>{original ? <img src={original} alt="Original source" /> : <div className="source-empty">Your source will appear here</div>}</section>
 
