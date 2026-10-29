@@ -42,5 +42,7 @@ class ImageResponse(BaseModel):
 class ProcessResponse(BaseModel):
     image_id: str
     output: str
+    opencv_output: str | None = None
+    opencv_steps: dict[str, Any] | None = None
     steps: dict[str, Any]
     parameters: dict[str, Any]

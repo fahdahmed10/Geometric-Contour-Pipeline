@@ -40,10 +40,17 @@ def process_canny(image_id: str, params: CannyRequest) -> ProcessResponse:
         result = run_canny(image_manager, image_id, CannyParameters(**params.model_dump(exclude={"output_slot"})))
         edges = image_manager.get(image_id).cache[f"canny:{CannyParameters(**params.model_dump(exclude={'output_slot'})).model_dump_json()}"]["edges"]
         image_manager.cache(image_id, "latest_canny", edges)
-        image_manager.cache(image_id, f"output_{params.output_slot}", edges)
+        image_manager.cache(image_id, f"canny_output_{params.output_slot}", edges)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return ProcessResponse(image_id=image_id, output=result["output"], steps=result["steps"], parameters=result["parameters"])
+    return ProcessResponse(
+        image_id=image_id,
+        output=result["output"],
+        opencv_output=result["opencv_output"],
+        opencv_steps=result["opencv_steps"],
+        steps=result["steps"],
+        parameters=result["parameters"],
+    )
 
 
 @router.post("/images/{image_id}/hough")
@@ -54,12 +61,12 @@ def process_hough(image_id: str, params: HoughRequest) -> dict[str, object]:
         original = session.original
         edges = original[..., 0] * 0.299 + original[..., 1] * 0.587 + original[..., 2] * 0.114
     elif params.input_source.startswith("output"):
-        edges = session.cache.get(f"output_{params.input_source[-1]}")
+        edges = session.cache.get(f"canny_output_{params.input_source[-1]}")
     if edges is None:
         raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Hough input")
     try:
         result = run_hough(image_manager, edges, HoughParameters(**params.model_dump(exclude={"input_source", "output_slot"})))
-        image_manager.cache(image_id, f"output_{params.output_slot}", result.pop("_output_matrix"))
+        image_manager.cache(image_id, f"hough_output_{params.output_slot}", result.pop("_output_matrix"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, **result}
