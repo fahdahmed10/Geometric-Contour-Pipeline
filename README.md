@@ -17,6 +17,9 @@ The frontend is organized as a guided two-stage workspace:
 3. **Ellipse Detection** uses the existing Canny result or either saved Canny
    output slot as its edge map, then saves its ellipse overlay to either output
    slot.
+4. **Circle Detection** uses the existing Canny result or either saved Canny
+   output slot and lets the user choose between the notebook's from-scratch
+   Circular Hough Transform and RANSAC 3-point circle fitting detectors.
 
 Each section displays a large `INPUT | Output 1 | Output 2` viewer grid followed
 by its own intermediate-stage pipeline.
@@ -33,9 +36,9 @@ by its own intermediate-stage pipeline.
   separate Canny/Hough sections, large input/output viewers, and step-by-step
   image viewers.
 
-The Canny, Hough, and primary ellipse computations are implemented from
-scratch. OpenCV is used for image decoding/encoding, line rendering, and only
-the opt-in ellipse reference comparison.
+The Canny, Hough, primary ellipse, and primary circle computations are
+implemented from scratch. OpenCV is used for image decoding/encoding, drawing,
+and only the opt-in reference comparisons.
 
 ## Run locally
 
@@ -68,10 +71,14 @@ Open the Vite URL (normally `http://localhost:5173`) and follow this workflow:
 3. Choose whether the Canny result is stored in Output 1 or Output 2.
 4. Choose the Hough input from Original, Canny Output 1, Canny Output 2, or
    Latest Canny edges.
-5. Use the detection dropdown to choose Hough Line Detection or Ellipse Detection.
+5. Use the detection dropdown to choose Hough Line Detection, Ellipse Detection,
+   or Circle Detection.
 6. Configure and run the selected detector. Ellipse Detection exposes the
    notebook controls `a_min`, `a_max`, Vote threshold, fit tolerance, minimum
    support, maximum ellipses per component, and RANSAC iterations.
+   Circle Detection exposes independent controls for the selected CHT or RANSAC
+   implementation and optionally compares that one implementation with
+   OpenCV's Hough circle reference.
 7. Choose the destination output slot and inspect the overlay.
 
 ## API
@@ -97,6 +104,16 @@ When Ellipse Detection uses **Latest Canny edges**, it applies the current
 website Canny implementation to the notebook-sized original image using the
 current Canny controls. Saved Canny slots remain available and are resized as
 edge maps when selected.
+
+`POST /api/images/{image_id}/circle` runs exactly one custom circle detector on
+`canny`, `output1`, or `output2`. The CHT option uses `min_diam`, `max_diam`,
+`min_votes`, coverage/perimeter thresholds, accumulator smoothing, peak NMS,
+gradient alignment, and least-squares refinement. The RANSAC option uses the
+same diameter bounds plus inlier tolerance, iterations, minimum inliers,
+coverage/perimeter thresholds, refinement, and random seed. Circle processing
+reuses the selected Canny edge map and its cached Gaussian blur without running
+Canny again. `compare_opencv` is opt-in and runs OpenCV's `HoughCircles` only for
+the selected custom algorithm.
 
 For diagnostics, `POST /api/images/{image_id}/canny-comparison` runs the current
 website Canny and the notebook Canny on the same uploaded image and reports edge

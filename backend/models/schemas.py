@@ -50,6 +50,49 @@ class EllipseRequest(EllipseParameters):
     canny: CannyParameters = Field(default_factory=CannyParameters)
 
 
+class CircleRequest(BaseModel):
+    """Request contract for either independent notebook circle detector."""
+
+    algorithm: str = Field("cht", pattern="^(cht|ransac)$")
+    input_source: str = Field("canny", pattern="^(canny|output1|output2)$")
+    output_slot: str = Field("2", pattern="^(1|2)$")
+    compare_opencv: bool = False
+
+    # Circular Hough Transform controls.
+    min_diam: int = Field(45, ge=4, le=10000)
+    max_diam: int = Field(125, ge=4, le=10000)
+    min_votes: int = Field(48, ge=5, le=100000)
+    min_coverage: float = Field(0.6, ge=0.1, le=1.0)
+    perim_frac: float = Field(0.4, ge=0.0, le=1.0)
+    smooth: int = Field(3, ge=1, le=9)
+    nms_win: int = Field(7, ge=3, le=21)
+    align_cos: float = Field(0.7, ge=0.0, le=0.95)
+    refine: bool = True
+
+    # RANSAC controls.
+    tol: float = Field(2.0, ge=0.5, le=6.0)
+    max_iter: int = Field(1000, ge=100, le=10000)
+    min_inliers: int = Field(48, ge=5, le=100000)
+    seed: int = Field(0, ge=0, le=99)
+
+    # Optional OpenCV comparison controls. None keeps the notebook-derived
+    # value (based on the selected custom detector and Canny settings).
+    opencv_dp: float = Field(1.0, ge=0.5, le=3.0)
+    opencv_min_dist: float | None = Field(None, ge=1.0, le=10000.0)
+    opencv_param1: float | None = Field(None, ge=1.0, le=1000.0)
+    opencv_param2: float | None = Field(None, ge=1.0, le=1000.0)
+    opencv_min_radius: float | None = Field(None, ge=1.0, le=10000.0)
+    opencv_max_radius: float | None = Field(None, ge=1.0, le=10000.0)
+
+    @model_validator(mode="after")
+    def validate_diameter_range(self):
+        if self.min_diam > self.max_diam:
+            raise ValueError("min_diam must be less than or equal to max_diam")
+        if self.opencv_min_radius is not None and self.opencv_max_radius is not None and self.opencv_min_radius > self.opencv_max_radius:
+            raise ValueError("opencv_min_radius must be less than or equal to opencv_max_radius")
+        return self
+
+
 class CannyComparisonRequest(CannyParameters):
     resize_to_notebook: bool = Field(
         True,

@@ -1,12 +1,13 @@
 import hashlib
 
 from backend.core.canny import canny_edge_detector
+from backend.core.circles import circular_hough, diameter_to_radii, opencv_circles, ransac_circles
 from backend.core.ellipse import EllipseParams, detect_ellipses, draw_ellipse
 from backend.core.hough import detect_peaks, draw_lines, hough_transform
 from backend.core.image_codec import matrix_to_data_url, serialize_step
 from backend.core.notebook_canny import canny as notebook_canny
 from backend.models.image_manager import ImageManager
-from backend.models.schemas import CannyComparisonRequest, CannyParameters, EllipseParameters, HoughParameters
+from backend.models.schemas import CannyComparisonRequest, CannyParameters, CircleRequest, EllipseParameters, HoughParameters
 import cv2
 import numpy as np
 
@@ -232,7 +233,7 @@ def _annotate_ellipse_overlay(
             f"canny: kernel={canny_params.kernel_size}  sigma={canny_params.sigma:g}  "
             f"low={canny_params.low_threshold:g}  high={canny_params.high_threshold:g}"
         )
-    footer_height = 22 * len(lines) + 12
+    footer_height = 30 * len(lines) + 18
     annotated = np.full((height + footer_height, width, 3), (12, 14, 12), dtype=np.uint8)
     annotated[:height] = image
     for index, line in enumerate(lines):
@@ -328,5 +329,211 @@ def run_ellipse(
         result["opencv_steps"] = {
             "input_edges": serialize_step(processed_edges),
             "ellipse_overlay": serialize_step(annotated_opencv_overlay),
+        }
+    return result
+
+
+def _draw_circle_overlay(
+    original: np.ndarray,
+    circles: list[dict[str, float]],
+    color: tuple[int, int, int],
+    title: str,
+    info_lines: list[str] | None = None,
+) -> np.ndarray:
+    """Render notebook-style circles on the original RGB image."""
+    overlay = np.asarray(original).copy()
+    if overlay.dtype != np.uint8:
+        overlay = np.clip(overlay, 0, 255).astype(np.uint8)
+    if overlay.ndim == 2:
+        overlay = cv2.cvtColor(overlay, cv2.COLOR_GRAY2RGB)
+    for index, circle in enumerate(sorted(circles, key=lambda item: -item.get("r", 0)), 1):
+        centre = (int(round(circle["x"])), int(round(circle["y"])))
+        radius = max(1, int(round(circle["r"])))
+        cv2.circle(overlay, centre, radius, color, 2, cv2.LINE_AA)
+        cv2.drawMarker(overlay, centre, color, cv2.MARKER_CROSS, 13, 1, cv2.LINE_AA)
+        cv2.putText(
+            overlay,
+            str(index),
+            (centre[0] + 4, centre[1] - 4),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+    # Keep the result visually self-describing without changing the input image.
+    cv2.putText(overlay, title, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, color, 2, cv2.LINE_AA)
+    # Parameter details are rendered in the static UI summary panel. Keeping
+    # them out of the image prevents tiny text after the result is scaled into
+    # an output card.
+    return overlay
+
+
+def run_circle(
+    original: np.ndarray,
+    edges: np.ndarray,
+    blurred: np.ndarray,
+    params: CircleRequest,
+    compare_opencv: bool = False,
+    canny_params: CannyParameters | None = None,
+) -> dict[str, object]:
+    """Run exactly one notebook circle detector on an existing Canny result."""
+    edge_map = np.asarray(edges) > 0
+    if edge_map.ndim != 2:
+        raise ValueError("Circle detection requires a two-dimensional Canny edge map")
+    blurred_gray = np.asarray(blurred)
+    if blurred_gray.ndim != 2 or blurred_gray.shape != edge_map.shape:
+        raise ValueError("The selected Canny blur and edge map must have matching shapes")
+
+    r_min, r_max = diameter_to_radii(params.min_diam, params.max_diam)
+    accumulator = None
+    if params.algorithm == "cht":
+        circles, accumulator = circular_hough(
+            blurred_gray,
+            edge_map,
+            r_min,
+            r_max,
+            params.min_votes,
+            params.min_coverage,
+            params.perim_frac,
+            params.smooth | 1,
+            params.nms_win | 1,
+            params.align_cos,
+            refine=params.refine,
+        )
+        detector_title = "CUSTOM CIRCULAR HOUGH TRANSFORM"
+    elif params.algorithm == "ransac":
+        circles = ransac_circles(
+            edge_map,
+            r_min,
+            r_max,
+            params.tol,
+            params.max_iter,
+            params.min_inliers,
+            params.perim_frac,
+            params.min_coverage,
+            refine=params.refine,
+            seed=params.seed,
+        )
+        detector_title = "CUSTOM RANSAC CIRCLE DETECTION"
+    else:  # Defensive guard for callers bypassing Pydantic.
+        raise ValueError("algorithm must be 'cht' or 'ransac'")
+
+    custom_info = [
+        f"detected_circles={len(circles)}  min_diam={params.min_diam}px  max_diam={params.max_diam}px",
+        f"radius_search={r_min:.1f}..{r_max:.1f}px  min_coverage={params.min_coverage:.2f}  perim_frac={params.perim_frac:.2f}",
+    ]
+    if params.algorithm == "cht":
+        custom_info.append(
+            f"min_votes={params.min_votes}  smooth={params.smooth | 1}  nms_win={params.nms_win | 1}  "
+            f"align_cos={params.align_cos:.2f}  refine={params.refine}"
+        )
+    else:
+        custom_info.append(
+            f"tol={params.tol:.2f}px  max_iter={params.max_iter}  min_inliers={params.min_inliers}  "
+            f"seed={params.seed}  refine={params.refine}"
+        )
+    if canny_params is not None:
+        custom_info.append(
+            f"canny: kernel={canny_params.kernel_size}  sigma={canny_params.sigma:g}  "
+            f"low={canny_params.low_threshold:g}  high={canny_params.high_threshold:g}"
+        )
+    overlay = _draw_circle_overlay(original, circles, (0, 255, 255), detector_title, custom_info)
+    result: dict[str, object] = {
+        "output": matrix_to_data_url(overlay, color=True),
+        "opencv_output": None,
+        "opencv_steps": None,
+        "steps": {
+            "input_edges": serialize_step(edge_map.astype(np.uint8) * 255),
+            "circle_overlay": serialize_step(overlay),
+        },
+        "algorithm": params.algorithm,
+        "circles": circles,
+        "radii": {"min": r_min, "max": r_max},
+        "parameters": params.model_dump(),
+        "custom_parameters": {
+            "algorithm": params.algorithm,
+            "min_diam": params.min_diam,
+            "max_diam": params.max_diam,
+            "r_min": r_min,
+            "r_max": r_max,
+            "min_coverage": params.min_coverage,
+            "perim_frac": params.perim_frac,
+        },
+        "opencv_parameters": None,
+        "_output_matrix": overlay,
+    }
+    if accumulator is not None:
+        result["steps"]["accumulator"] = serialize_step(accumulator)
+
+    custom_parameters = result["custom_parameters"]
+    if params.algorithm == "cht":
+        custom_parameters.update({
+            "min_votes": params.min_votes,
+            "smooth": params.smooth | 1,
+            "nms_win": params.nms_win | 1,
+            "align_cos": params.align_cos,
+            "refine": params.refine,
+        })
+    else:
+        custom_parameters.update({
+            "tol": params.tol,
+            "max_iter": params.max_iter,
+            "min_inliers": params.min_inliers,
+            "seed": params.seed,
+            "refine": params.refine,
+        })
+    if canny_params is not None:
+        custom_parameters["canny_kernel"] = canny_params.kernel_size
+        custom_parameters["canny_sigma"] = canny_params.sigma
+        custom_parameters["canny_low"] = canny_params.low_threshold
+        custom_parameters["canny_high"] = canny_params.high_threshold
+
+    if compare_opencv:
+        evidence = params.min_votes if params.algorithm == "cht" else params.min_inliers
+        opencv_min_dist = params.opencv_min_dist if params.opencv_min_dist is not None else max(5.0, r_min)
+        opencv_param1 = params.opencv_param1 if params.opencv_param1 is not None else (
+            canny_params.high_threshold if canny_params is not None else 200.0
+        )
+        opencv_param2 = params.opencv_param2 if params.opencv_param2 is not None else max(10.0, 0.6 * evidence)
+        opencv_r_min = params.opencv_min_radius if params.opencv_min_radius is not None else r_min
+        opencv_r_max = params.opencv_max_radius if params.opencv_max_radius is not None else r_max
+        if opencv_r_min > opencv_r_max:
+            raise ValueError("opencv_min_radius must be less than or equal to opencv_max_radius")
+        opencv_results = opencv_circles(
+            blurred_gray,
+            opencv_r_min,
+            opencv_r_max,
+            opencv_min_dist,
+            opencv_param1,
+            opencv_param2,
+            params.opencv_dp,
+        )
+        opencv_min_radius = int(np.floor(opencv_r_min))
+        opencv_max_radius = int(np.ceil(opencv_r_max))
+        opencv_overlay = _draw_circle_overlay(
+            original,
+            opencv_results,
+            (255, 80, 80),
+            "OPENCV HOUGH CIRCLES",
+            [
+                f"detected_circles={len(opencv_results)}  dp={params.opencv_dp:.2f}  minDist={opencv_min_dist:.1f}px",
+                f"param1={opencv_param1:.1f}  param2={opencv_param2:.1f}  minRadius={opencv_min_radius}px  maxRadius={opencv_max_radius}px",
+                *([f"canny: kernel={canny_params.kernel_size}  sigma={canny_params.sigma:g}  low={canny_params.low_threshold:g}  high={canny_params.high_threshold:g}"] if canny_params is not None else []),
+            ],
+        )
+        result["opencv_output"] = matrix_to_data_url(opencv_overlay, color=True)
+        result["opencv_steps"] = {
+            "input_edges": serialize_step(edge_map.astype(np.uint8) * 255),
+            "circle_overlay": serialize_step(opencv_overlay),
+        }
+        result["opencv_circles"] = opencv_results
+        result["opencv_parameters"] = {
+            "dp": params.opencv_dp,
+            "minDist": opencv_min_dist,
+            "param1": opencv_param1,
+            "param2": opencv_param2,
+            "minRadius": opencv_min_radius,
+            "maxRadius": opencv_max_radius,
         }
     return result
