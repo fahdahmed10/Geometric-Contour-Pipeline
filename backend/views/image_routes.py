@@ -1,9 +1,9 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.controllers.processing import run_canny, run_canny_comparison, run_ellipse, run_hough
+from backend.controllers.processing import run_canny, run_canny_comparison, run_circle, run_ellipse, run_hough
 from backend.core.image_codec import decode_image, matrix_to_data_url
 from backend.models.image_manager import image_manager
-from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
+from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, CircleRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
 
 router = APIRouter(tags=["image-processing"])
 
@@ -37,10 +37,19 @@ def get_image(image_id: str) -> dict[str, object]:
 def process_canny(image_id: str, params: CannyRequest) -> ProcessResponse:
     _session_or_404(image_id)
     try:
-        result = run_canny(image_manager, image_id, CannyParameters(**params.model_dump(exclude={"output_slot"})))
-        edges = image_manager.get(image_id).cache[f"canny:{CannyParameters(**params.model_dump(exclude={'output_slot'})).model_dump_json()}"]["edges"]
+        canny_params = CannyParameters(**params.model_dump(exclude={"output_slot"}))
+        result = run_canny(image_manager, image_id, canny_params)
+        cached_steps = image_manager.get(image_id).cache[f"canny:{canny_params.model_dump_json()}"]
+        edges = cached_steps["edges"]
         image_manager.cache(image_id, "latest_canny", edges)
         image_manager.cache(image_id, f"canny_output_{params.output_slot}", edges)
+        # Circle CHT needs the gradient direction from the same Gaussian-blurred
+        # Canny input. Keep it beside the existing edge-slot cache; the public
+        # edge-slot behavior remains unchanged.
+        image_manager.cache(image_id, "latest_canny_blur", cached_steps["gaussian_blur"])
+        image_manager.cache(image_id, f"canny_blur_output_{params.output_slot}", cached_steps["gaussian_blur"])
+        image_manager.cache(image_id, "latest_canny_params", canny_params.model_dump())
+        image_manager.cache(image_id, f"canny_params_output_{params.output_slot}", canny_params.model_dump())
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return ProcessResponse(
@@ -105,14 +114,47 @@ def process_ellipse(image_id: str, params: EllipseRequest) -> dict[str, object]:
     return {"image_id": image_id, **result}
 
 
+@router.post("/images/{image_id}/circle")
+def process_circle(image_id: str, params: CircleRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    if params.input_source == "canny":
+        edges = session.cache.get("latest_canny")
+        blurred = session.cache.get("latest_canny_blur")
+        canny_data = session.cache.get("latest_canny_params")
+    else:
+        slot = params.input_source[-1]
+        edges = session.cache.get(f"canny_output_{slot}")
+        blurred = session.cache.get(f"canny_blur_output_{slot}")
+        canny_data = session.cache.get(f"canny_params_output_{slot}")
+    if edges is None or blurred is None:
+        raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Canny input")
+    try:
+        canny_params = CannyParameters(**canny_data) if isinstance(canny_data, dict) else None
+        result = run_circle(
+            session.original,
+            edges,
+            blurred,
+            params,
+            compare_opencv=params.compare_opencv,
+            canny_params=canny_params,
+        )
+        image_manager.cache(image_id, f"circle_output_{params.output_slot}", result.pop("_output_matrix"))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
 @router.post("/images/{image_id}/pipeline")
 def process_pipeline(image_id: str, request: PipelineRequest) -> dict[str, object]:
     _session_or_404(image_id)
     try:
         canny_result = run_canny(image_manager, image_id, request.canny)
         canny_steps = canny_result["steps"]
-        canny_edges = image_manager.get(image_id).cache[f"canny:{request.canny.model_dump_json()}"]["edges"]
+        cached_canny = image_manager.get(image_id).cache[f"canny:{request.canny.model_dump_json()}"]
+        canny_edges = cached_canny["edges"]
         image_manager.cache(image_id, "latest_canny", canny_edges)
+        image_manager.cache(image_id, "latest_canny_blur", cached_canny["gaussian_blur"])
+        image_manager.cache(image_id, "latest_canny_params", request.canny.model_dump())
         hough_input = canny_edges
         if request.hough_input == "original":
             original = image_manager.get(image_id).original
