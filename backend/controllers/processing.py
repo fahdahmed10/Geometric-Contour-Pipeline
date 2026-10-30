@@ -5,7 +5,7 @@ from backend.core.circles import circular_hough, diameter_to_radii, opencv_circl
 from backend.core.ellipse import EllipseParams, detect_ellipses, draw_ellipse
 from backend.core.hough import detect_peaks, draw_lines, hough_transform
 from backend.core.image_codec import matrix_to_data_url, serialize_step
-from backend.core.notebook_canny import canny as notebook_canny
+from backend.core.canny import canny_edge_detector as notebook_canny
 from backend.models.image_manager import ImageManager
 from backend.models.schemas import CannyComparisonRequest, CannyParameters, CircleRequest, EllipseParameters, HoughParameters
 import cv2
