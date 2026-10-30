@@ -1,9 +1,9 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.controllers.processing import run_canny, run_hough
+from backend.controllers.processing import run_canny, run_canny_comparison, run_ellipse, run_hough
 from backend.core.image_codec import decode_image, matrix_to_data_url
 from backend.models.image_manager import image_manager
-from backend.models.schemas import CannyParameters, CannyRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
+from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
 
 router = APIRouter(tags=["image-processing"])
 
@@ -53,6 +53,15 @@ def process_canny(image_id: str, params: CannyRequest) -> ProcessResponse:
     )
 
 
+@router.post("/images/{image_id}/canny-comparison")
+def process_canny_comparison(image_id: str, params: CannyComparisonRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    try:
+        return {"image_id": image_id, **run_canny_comparison(session.original, params)}
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/images/{image_id}/hough")
 def process_hough(image_id: str, params: HoughRequest) -> dict[str, object]:
     session = _session_or_404(image_id)
@@ -68,6 +77,30 @@ def process_hough(image_id: str, params: HoughRequest) -> dict[str, object]:
         result = run_hough(image_manager, edges, HoughParameters(**params.model_dump(exclude={"input_source", "output_slot"})))
         image_manager.cache(image_id, f"hough_output_{params.output_slot}", result.pop("_output_matrix"))
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
+@router.post("/images/{image_id}/ellipse")
+def process_ellipse(image_id: str, params: EllipseRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    if params.input_source == "canny":
+        edges = session.cache.get("latest_canny")
+    else:
+        edges = session.cache.get(f"canny_output_{params.input_source[-1]}")
+    if edges is None:
+        raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Canny input")
+    try:
+        result = run_ellipse(
+            session.original,
+            edges,
+            EllipseParameters(**params.model_dump(exclude={"input_source", "output_slot", "compare_opencv", "resize_input", "canny"})),
+            compare_opencv=params.compare_opencv,
+            canny_params=params.canny if params.input_source == "canny" else None,
+            resize_input=params.resize_input,
+        )
+        image_manager.cache(image_id, f"ellipse_output_{params.output_slot}", result.pop("_output_matrix"))
+    except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, **result}
 

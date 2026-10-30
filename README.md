@@ -14,13 +14,17 @@ The frontend is organized as a guided two-stage workspace:
 2. **Hough Line Detection** accepts the original image, either Canny output slot,
    or the latest Canny result. Its rendered line overlay can independently be
    saved to **Output 1** or **Output 2**.
+3. **Ellipse Detection** uses the existing Canny result or either saved Canny
+   output slot as its edge map, then saves its ellipse overlay to either output
+   slot.
 
 Each section displays a large `INPUT | Output 1 | Output 2` viewer grid followed
 by its own intermediate-stage pipeline.
 
 ## Architecture
 
-- `backend/core/` contains the notebook-derived, NumPy implementations.
+- `backend/core/` contains the notebook-derived, NumPy implementations,
+  including the custom ellipse fitter in `ellipse.py`.
 - `backend/models/` contains Pydantic contracts and the thread-safe
   `ImageManager`, which caches original and intermediate matrices in memory.
 - `backend/controllers/` runs Canny and Hough processing.
@@ -29,8 +33,9 @@ by its own intermediate-stage pipeline.
   separate Canny/Hough sections, large input/output viewers, and step-by-step
   image viewers.
 
-The only OpenCV operations are image decoding/encoding and line rendering; the
-Canny and Hough computations themselves are implemented from scratch.
+The Canny, Hough, and primary ellipse computations are implemented from
+scratch. OpenCV is used for image decoding/encoding, line rendering, and only
+the opt-in ellipse reference comparison.
 
 ## Run locally
 
@@ -63,8 +68,11 @@ Open the Vite URL (normally `http://localhost:5173`) and follow this workflow:
 3. Choose whether the Canny result is stored in Output 1 or Output 2.
 4. Choose the Hough input from Original, Canny Output 1, Canny Output 2, or
    Latest Canny edges.
-5. Configure and run Hough.
-6. Choose the Hough destination output slot and inspect its line overlay.
+5. Use the detection dropdown to choose Hough Line Detection or Ellipse Detection.
+6. Configure and run the selected detector. Ellipse Detection exposes the
+   notebook controls `a_min`, `a_max`, Vote threshold, fit tolerance, minimum
+   support, maximum ellipses per component, and RANSAC iterations.
+7. Choose the destination output slot and inspect the overlay.
 
 ## API
 
@@ -77,6 +85,24 @@ Open the Vite URL (normally `http://localhost:5173`) and follow this workflow:
   edge input, accumulator, and rendered line overlay stages.
 - `POST /api/images/{image_id}/pipeline` — runs both stages and routes the
   selected Hough input.
+
+`POST /api/images/{image_id}/ellipse` runs the custom detector on `canny`,
+`output1`, or `output2`. It accepts the notebook ellipse parameters, including
+`a_min`, `a_max`, `vote_threshold`, `fit_tol`, `min_support`, `max_ellipses`,
+`ransac_iters`, `output_slot`, and optional `compare_opencv`. The selected edge
+map is normalized to the notebook's `MAX_DIM = 400` canvas for ellipse work;
+the original Canny cache is not modified.
+
+When Ellipse Detection uses **Latest Canny edges**, it applies the current
+website Canny implementation to the notebook-sized original image using the
+current Canny controls. Saved Canny slots remain available and are resized as
+edge maps when selected.
+
+For diagnostics, `POST /api/images/{image_id}/canny-comparison` runs the current
+website Canny and the notebook Canny on the same uploaded image and reports edge
+pixel counts, differing pixels, edge-map images, and ellipse counts produced
+from each map. It normalizes to the notebook's `MAX_DIM = 400` canvas by default;
+this endpoint does not replace or cache the production Canny.
 
 ### Canny request
 
