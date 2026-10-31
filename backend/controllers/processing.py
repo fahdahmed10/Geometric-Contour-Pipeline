@@ -193,7 +193,7 @@ def run_hough(
         "_output_matrix": overlay,
         "steps": {
             "input_edges": serialize_step(edges),
-            "accumulator": serialize_step(accumulator),
+            "accumulator": serialize_step(accumulator, display_size=(800, 260)),
             "line_overlay": serialize_step(overlay),
         },
         "lines": lines,

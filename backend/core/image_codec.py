@@ -31,10 +31,13 @@ def matrix_to_data_url(matrix: np.ndarray, *, color: bool = False) -> str:
     return "data:image/png;base64," + base64.b64encode(buffer).decode("ascii")
 
 
-def serialize_step(matrix: np.ndarray) -> dict[str, object]:
+def serialize_step(matrix: np.ndarray, display_size: tuple[int, int] | None = None) -> dict[str, object]:
     array = np.asarray(matrix)
+    display = array
+    if display_size is not None:
+        display = cv2.resize(array, display_size, interpolation=cv2.INTER_NEAREST)
     return {
-        "image": matrix_to_data_url(array),
+        "image": matrix_to_data_url(display),
         "shape": list(array.shape),
         "min": float(array.min()) if array.size else 0,
         "max": float(array.max()) if array.size else 0,
