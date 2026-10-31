@@ -1,44 +1,242 @@
 # Contour Lab
 
-Contour Lab is a full-stack image-processing application built around the custom
-algorithms in [`notebooks/CannyEdge_LineDetection.ipynb`](./notebooks/CannyEdge_LineDetection.ipynb).
-It keeps the original image matrix in a backend session and exposes the
-Gaussian blur, Sobel gradient, non-maximum suppression, hysteresis, Hough
-accumulator, and detected-line stages to a React UI.
+Contour Lab is a from-scratch computer-vision pipeline for detecting and
+measuring geometric shapes. It combines a FastAPI backend with a React
+frontend and keeps each algorithm visible through its inputs, outputs, and
+intermediate stages.
 
-The frontend is organized as a guided two-stage workspace:
+## What the project does
 
-1. **Canny Edge Detection** starts from the original uploaded image, exposes all
-   Canny parameters, and lets the user save the result to **Output 1** or
-   **Output 2**.
-2. **Hough Line Detection** accepts the original image, either Canny output slot,
-   or the latest Canny result. Its rendered line overlay can independently be
-   saved to **Output 1** or **Output 2**.
-3. **Ellipse Detection** uses the existing Canny result or either saved Canny
-   output slot as its edge map, then saves its ellipse overlay to either output
-   slot.
-4. **Circle Detection** uses the existing Canny result or either saved Canny
-   output slot and lets the user choose between the notebook's from-scratch
-   Circular Hough Transform and RANSAC 3-point circle fitting detectors.
+The application supports:
 
-Each section displays a large `INPUT | Output 1 | Output 2` viewer grid followed
-by its own intermediate-stage pipeline.
+- **Canny edge detection**: builds an edge map from an uploaded image.
+- **Hough line detection**: votes for line parameters in accumulator space.
+- **Ellipse detection**: searches for supported ellipses in an edge map.
+- **Circle detection**: provides custom Circular Hough Transform and RANSAC
+  implementations, with an optional OpenCV comparison.
+- **Active contour (Snake)**: evolves a user-initialized closed contour toward
+  image boundaries using a greedy energy-minimization algorithm.
+- **Contour measurements**: represents the final contour using Freeman chain
+  code and calculates its perimeter and area.
+
+Every detector uses the existing **Input / Output 1 / Output 2** workflow.
+Intermediate results are cached by `image_id`, so one operation can reuse the
+result of another without re-uploading the image.
 
 ## Architecture
 
-- `backend/core/` contains the notebook-derived, NumPy implementations,
-  including the custom ellipse fitter in `ellipse.py`.
-- `backend/models/` contains Pydantic contracts and the thread-safe
-  `ImageManager`, which caches original and intermediate matrices in memory.
-- `backend/controllers/` runs Canny and Hough processing.
-- `backend/views/` contains FastAPI routes.
-- `frontend/` is a Vite + React client with parameter controls, output routing,
-  separate Canny/Hough sections, large input/output viewers, and step-by-step
-  image viewers.
+The code is intentionally split into four layers:
 
-The Canny, Hough, primary ellipse, and primary circle computations are
-implemented from scratch. OpenCV is used for image decoding/encoding, drawing,
-and only the opt-in reference comparisons.
+```text
+backend/core/         Pure algorithms and image helpers
+backend/models/       Pydantic request contracts and ImageManager
+backend/controllers/  Request orchestration and cache selection
+backend/views/        FastAPI routes
+frontend/             React/Vite user interface
+```
+
+The main rule is that algorithms do not know about FastAPI or the frontend.
+Routes validate requests, controllers select inputs and cache outputs, and core
+modules perform the calculations.
+
+OpenCV is used only through existing decoding, encoding, drawing, and optional
+reference-comparison helpers. The primary Canny, Hough, ellipse, circle, Snake,
+and contour-measurement logic is implemented manually.
+
+## User workflow
+
+1. Upload an image.
+2. Run Canny and save the edge map to Output 1 or Output 2.
+3. Select Hough, ellipse, or circle detection and choose its input source.
+4. For Snake:
+   - choose the number of contour samples;
+   - click exactly that many points around the object;
+   - the final point is connected to the first automatically;
+   - run the greedy active contour;
+   - inspect the initial and fitted contours.
+5. Inspect the final chain code, perimeter, area, and Pick's-theorem check.
+
+The Snake display keeps the object unchanged. Initial and fitted contours are
+drawn on top of the original image, with UI-only controls for line thickness
+and optional final vertices.
+
+README media belongs under `docs/images/` for screenshots and still images, or
+`docs/gifs/` for animated demonstrations. The placeholder filenames below can
+be replaced directly when the final media is available.
+
+## Mathematical basis
+
+### Canny
+
+The image gradient is estimated from horizontal and vertical derivatives:
+
+```text
+M(x, y) = sqrt(Gx(x, y)^2 + Gy(x, y)^2)
+```
+
+Non-maximum suppression keeps thin local maxima, and hysteresis links strong
+edges through weaker connected pixels.
+
+### Hough lines
+
+An image point `(x, y)` votes for lines in polar form:
+
+```text
+rho = x cos(theta) + y sin(theta)
+```
+
+Peaks in the accumulator represent likely image lines.
+
+**Examples to add**
+
+<!-- Section screenshot: input source, radius/theta resolution, maximum lines,
+     vote threshold, Output 1/Output 2, and accumulator stage. -->
+![Hough section example](./docs/images/hough-section-example-1-placeholder.png)
+
+<!-- Focused output: detected lines drawn over the source image. -->
+![Hough output example](./docs/images/hough-output-example-2-placeholder.png)
+
+Record the input source, parameter values, selected output slot, and the
+detected-line result with the screenshots.
+
+### Circle detection
+
+For a circle:
+
+```text
+(x - a)^2 + (y - b)^2 = r^2
+```
+
+The custom detectors search for likely centers and radii either by voting
+(CHT) or by fitting circles to random point triples (RANSAC).
+
+**Examples to add**
+
+<!-- Section screenshot: CHT or RANSAC controls, selected input, Output 1/2,
+     detected result, and optional OpenCV comparison. -->
+![Circle section example](./docs/images/circle-section-example-1-placeholder.png)
+
+<!-- Focused output: custom circles beside or overlaid with the OpenCV result. -->
+![Circle output example](./docs/images/circle-output-example-2-placeholder.png)
+
+Record the selected algorithm, diameter range, vote/inlier controls, input
+source, output slot, and whether the OpenCV comparison is enabled.
+
+### Ellipse detection
+
+An ellipse is represented by its center, major/minor semi-axes, and rotation.
+The detector searches candidate geometric supports in the edge map and keeps
+ellipses that satisfy the configured support and fitting thresholds.
+
+**Examples to add**
+
+<!-- Section screenshot: ellipse parameters, selected input, output slot, and
+     the stage pipeline or OpenCV comparison. -->
+![Ellipse section example](./docs/images/ellipse-section-example-1-placeholder.png)
+
+<!-- Focused output: fitted ellipse overlay, optionally beside the reference. -->
+![Ellipse output example](./docs/images/ellipse-output-example-2-placeholder.png)
+
+Record `a_min`, `a_max`, vote threshold, fit tolerance, minimum support,
+maximum ellipses, RANSAC iterations, input source, and output slot.
+
+### Snake
+
+The greedy Snake minimizes a weighted local energy:
+
+```text
+E = alpha E_continuity + beta E_curvature + gamma E_image
+```
+
+Intuitively:
+
+- continuity discourages uneven point spacing;
+- curvature discourages unwanted sharp changes;
+- image energy attracts the contour toward strong boundaries.
+
+The user supplies an initial closed polygon. The algorithm updates each point
+by searching a local neighborhood and selecting the lowest-energy candidate.
+
+**Examples to add**
+
+<!-- Animated example: user places exactly n contour points; the last point
+     closes the contour back to the first. -->
+![Snake point placement](./docs/gifs/snake-point-placement-placeholder.gif)
+
+<!-- Static example: completed initial contour before processing. -->
+![Snake initial contour](./docs/images/snake-initial-contour-placeholder.png)
+
+<!-- Animated example: contour evolution across Snake iterations. -->
+![Snake evolution](./docs/gifs/snake-evolution-placeholder.gif)
+
+<!-- Output example: unchanged object with initial and fitted contours only. -->
+![Snake fitted-contour output](./docs/images/snake-output-placeholder.png)
+
+<!-- UI example: iterations, chain code, perimeter, area, boundary pixels, and
+     Pick's theorem status. -->
+![Snake measurement summary](./docs/images/snake-metrics-placeholder.png)
+
+Record the sample count, alpha, beta, gamma, window size, maximum iterations,
+output slot, display thickness, and vertex visibility.
+
+### Chain code, perimeter, and area
+
+The final floating-point contour is rasterized into an integer 8-connected
+pixel path. Each step becomes a Freeman direction code:
+
+```text
+orthogonal step = 1
+diagonal step   = sqrt(2)
+```
+
+Therefore:
+
+```text
+P_chain = N_orthogonal + sqrt(2) * N_diagonal
+```
+
+The lattice polygon area uses the shoelace equation:
+
+```text
+A = 1/2 |sum(x_i y_(i+1) - x_(i+1) y_i)|
+```
+
+The pixel-fill result is checked with Pick's theorem:
+
+```text
+pixel_fill = shoelace_area + boundary_pixels / 2 + 1
+```
+
+The chain-code perimeter is a discrete estimator. For curved shapes it can
+overestimate the analytic circumference, so circle validation uses a
+one-sided lower-bound check rather than a tight tolerance.
+
+**Measurement example to add**
+
+<!-- Optional focused screenshot of the chain-code and area/perimeter result
+     for a known shape, such as the 10-step square. -->
+![Contour measurement example](./docs/images/contour-measurement-example-placeholder.png)
+
+## API overview
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/images` | Upload an image and receive an `image_id`. |
+| `GET /api/images/{image_id}` | Retrieve the original image. |
+| `POST /api/images/{image_id}/canny` | Run Canny and cache an output slot. |
+| `POST /api/images/{image_id}/hough` | Detect lines from a selected input. |
+| `POST /api/images/{image_id}/ellipse` | Detect ellipses from Canny output. |
+| `POST /api/images/{image_id}/circle` | Run custom circle detection. |
+| `POST /api/images/{image_id}/snake` | Evolve a user-initialized contour. |
+| `POST /api/images/{image_id}/contour-metrics` | Measure a cached or raw contour. |
+
+Snake contours are cached as:
+
+```text
+latest_snake_contour
+snake_contour_1
+snake_contour_2
+```
 
 ## Run locally
 
@@ -53,8 +251,8 @@ cd ..
 uvicorn backend.main:app --reload
 ```
 
-The API starts at `http://localhost:8000`. Interactive API documentation is
-available at `http://localhost:8000/docs`.
+The API is available at `http://localhost:8000`; documentation is at
+`http://localhost:8000/docs`.
 
 ### Frontend
 
@@ -64,129 +262,52 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL (normally `http://localhost:5173`) and follow this workflow:
+## Validation
 
-1. Upload an image.
-2. Configure and run Canny.
-3. Choose whether the Canny result is stored in Output 1 or Output 2.
-4. Choose the Hough input from Original, Canny Output 1, Canny Output 2, or
-   Latest Canny edges.
-5. Use the detection dropdown to choose Hough Line Detection, Ellipse Detection,
-   or Circle Detection.
-6. Configure and run the selected detector. Ellipse Detection exposes the
-   notebook controls `a_min`, `a_max`, Vote threshold, fit tolerance, minimum
-   support, maximum ellipses per component, and RANSAC iterations.
-   Circle Detection exposes independent controls for the selected CHT or RANSAC
-   implementation and optionally compares that one implementation with
-   OpenCV's Hough circle reference.
-7. Choose the destination output slot and inspect the overlay.
+Run the deterministic checks from the project root:
 
-## API
-
-- `POST /api/images` — multipart image upload; returns an in-memory `image_id`.
-- `GET /api/images/{image_id}` — returns the original image.
-- `POST /api/images/{image_id}/canny` — runs Canny, returns all intermediate
-  stages, and accepts `output_slot: "1" | "2"` to cache its matrix.
-- `POST /api/images/{image_id}/hough` — runs Hough on `original`, `canny`,
-  `output1`, or `output2`, accepts `output_slot: "1" | "2"`, and returns the
-  edge input, accumulator, and rendered line overlay stages.
-- `POST /api/images/{image_id}/pipeline` — runs both stages and routes the
-  selected Hough input.
-
-`POST /api/images/{image_id}/ellipse` runs the custom detector on `canny`,
-`output1`, or `output2`. It accepts the notebook ellipse parameters, including
-`a_min`, `a_max`, `vote_threshold`, `fit_tol`, `min_support`, `max_ellipses`,
-`ransac_iters`, `output_slot`, and optional `compare_opencv`. The selected edge
-map is normalized to the notebook's `MAX_DIM = 400` canvas for ellipse work;
-the original Canny cache is not modified.
-
-When Ellipse Detection uses **Latest Canny edges**, it applies the current
-website Canny implementation to the notebook-sized original image using the
-current Canny controls. Saved Canny slots remain available and are resized as
-edge maps when selected.
-
-`POST /api/images/{image_id}/circle` runs exactly one custom circle detector on
-`canny`, `output1`, or `output2`. The CHT option uses `min_diam`, `max_diam`,
-`min_votes`, coverage/perimeter thresholds, accumulator smoothing, peak NMS,
-gradient alignment, and least-squares refinement. The RANSAC option uses the
-same diameter bounds plus inlier tolerance, iterations, minimum inliers,
-coverage/perimeter thresholds, refinement, and random seed. Circle processing
-reuses the selected Canny edge map and its cached Gaussian blur without running
-Canny again. `compare_opencv` is opt-in and runs OpenCV's `HoughCircles` only for
-the selected custom algorithm.
-
-For diagnostics, `POST /api/images/{image_id}/canny-comparison` runs the current
-website Canny and the notebook Canny on the same uploaded image and reports edge
-pixel counts, differing pixels, edge-map images, and ellipse counts produced
-from each map. It normalizes to the notebook's `MAX_DIM = 400` canvas by default;
-this endpoint does not replace or cache the production Canny.
-
-### Canny request
-
-```json
-{
-  "kernel_size": 7,
-  "sigma": 1,
-  "low_threshold": 80,
-  "high_threshold": 200,
-  "output_slot": "1"
-}
+```powershell
+python -m backend.core.snake.self_check
+python -m backend.core.contour_metrics_self_check
+python -m compileall -q backend
+cd frontend
+npm run build
 ```
 
-### Hough request
+The contour checks cover:
 
-```json
-{
-  "radius_res": 1,
-  "theta_res": 1,
-  "max_lines": 10,
-  "vote_threshold": 20,
-  "input_source": "output1",
-  "output_slot": "2"
-}
-```
+- a square with 10 steps per side;
+- a diagonal diamond;
+- reversed contour order;
+- a sampled circle;
+- Pick's theorem;
+- chain-code closure and perimeter behavior.
 
-`input_source` accepts `original`, `canny`, `output1`, or `output2`.
+## Comparison notes
 
-### Combined pipeline request
+The project is designed to make custom implementations easy to compare with
+reference methods without replacing the custom result.
 
-The combined endpoint remains available for clients that want to execute both
-algorithms in one request:
+| Component | Custom method | Reference / comparison | Result to record |
+|---|---|---|---|
+| Canny | Manual stages | OpenCV Canny / notebook implementation | `[add edge-pixel or difference comparison]` |
+| Lines | Custom Hough transform | OpenCV HoughLines | `[add detected-line comparison]` |
+| Ellipses | Custom ellipse detector | OpenCV fitEllipse | `[add center/axis comparison]` |
+| Circles | CHT or RANSAC | OpenCV HoughCircles | `[add center/radius comparison]` |
+| Snake | Greedy active contour | `[add chosen reference if required]` | `[add contour or radius comparison]` |
+| Measurements | Freeman chain code | Analytic shapes and Pick's theorem | `[add measured values]` |
 
-```json
-{
-  "canny": {
-    "kernel_size": 7,
-    "sigma": 1,
-    "low_threshold": 80,
-    "high_threshold": 200
-  },
-  "hough": {
-    "radius_res": 1,
-    "theta_res": 1,
-    "max_lines": 10,
-    "vote_threshold": 20
-  },
-  "hough_input": "canny"
-}
-```
+For the circle measurement check, document the known chain-code bias instead of
+claiming a tight circumference match.
 
-## Intermediate stages
+## License
 
-The Canny response includes:
+This project is released under the **MIT License**. See
+[`LICENSE`](./LICENSE) for the full text.
 
-- Grayscale
-- Gaussian blur
-- Gradient magnitude
-- Gradient direction
-- Non-maximum suppression
-- Final hysteresis edges
+## Team
 
-The Hough response includes:
-
-- Edge input
-- Hough accumulator space
-- Final detected-line overlay
-
-All stages are returned as PNG data URLs with matrix shape and min/max metadata,
-so the React client can render them without reloading the uploaded image.
+- Fahd Ahmed
+- Nardeen Ezz
+- Mohunad Hassan
+- Bassel Shaheen

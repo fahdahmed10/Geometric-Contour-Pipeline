@@ -1,0 +1,1 @@
+"""Manual active contour implementation."""

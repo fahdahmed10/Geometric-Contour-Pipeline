@@ -39,3 +39,30 @@ def serialize_step(matrix: np.ndarray) -> dict[str, object]:
         "min": float(array.min()) if array.size else 0,
         "max": float(array.max()) if array.size else 0,
     }
+
+
+def encode_image(matrix: np.ndarray) -> bytes:
+    """Encode an image matrix for a pure-Python pipeline that accepts image bytes."""
+    array = np.asarray(matrix)
+    if array.dtype != np.uint8:
+        array = np.clip(array, 0, 255).astype(np.uint8)
+    if array.ndim == 3:
+        array = cv2.cvtColor(array, cv2.COLOR_RGB2RGBA)
+    success, buffer = cv2.imencode(".png", array)
+    if not success:
+        raise ValueError("Unable to encode processing input")
+    return buffer.tobytes()
+
+
+def draw_contour(image: np.ndarray, points: list[tuple[float, float]]) -> np.ndarray:
+    """Draw a closed contour for presentation without putting drawing in the algorithm."""
+    import cv2
+
+    output = np.asarray(image).copy()
+    if output.ndim == 2:
+        output = cv2.cvtColor(output.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+    output = np.clip(output, 0, 255).astype(np.uint8)
+    vertices = np.rint(np.asarray(points)).astype(np.int32).reshape((-1, 1, 2))
+    if len(vertices) >= 3:
+        cv2.polylines(output, [vertices], True, (0, 255, 180), 2, cv2.LINE_AA)
+    return output

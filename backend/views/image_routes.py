@@ -1,9 +1,10 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.controllers.processing import run_canny, run_canny_comparison, run_circle, run_ellipse, run_hough
+from backend.controllers.processing import run_canny, run_canny_comparison, run_circle, run_contour_metrics, run_ellipse, run_hough, run_snake
 from backend.core.image_codec import decode_image, matrix_to_data_url
 from backend.models.image_manager import image_manager
-from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, CircleRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
+from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, CircleRequest, ContourMetricsRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
+from backend.models.snake_models import SnakeRequest
 
 router = APIRouter(tags=["image-processing"])
 
@@ -140,6 +141,47 @@ def process_circle(image_id: str, params: CircleRequest) -> dict[str, object]:
         )
         image_manager.cache(image_id, f"circle_output_{params.output_slot}", result.pop("_output_matrix"))
     except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
+@router.post("/images/{image_id}/snake")
+def process_snake(image_id: str, params: SnakeRequest) -> dict[str, object]:
+    _session_or_404(image_id)
+    try:
+        result = run_snake(image_manager, image_id, params)
+        image_manager.cache(image_id, f"snake_output_{params.output_slot}", result["output"])
+        image_manager.cache(image_id, f"snake_contour_{params.output_slot}", result["final_contour"])
+        image_manager.cache(image_id, "latest_snake_contour", result["final_contour"])
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
+@router.post("/images/{image_id}/contour-metrics")
+def process_contour_metrics(image_id: str, params: ContourMetricsRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    cached_key = {
+        "snake": "latest_snake_contour",
+        "output1": "snake_contour_1",
+        "output2": "snake_contour_2",
+    }.get(params.input_source)
+    cached = session.cache.get(cached_key) if cached_key else None
+    if params.input_source == "raw":
+        if params.points is None:
+            raise HTTPException(status_code=422, detail="Raw contour input requires points")
+        points = [(point.x, point.y) for point in params.points]
+    elif isinstance(cached, list):
+        try:
+            points = [(float(point["x"]), float(point["y"])) for point in cached]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="Cached contour has an invalid shape") from exc
+    else:
+        raise HTTPException(status_code=409, detail="Run Snake first or choose a populated contour input")
+    try:
+        result = run_contour_metrics(image_manager, image_id, points)
+        image_manager.cache(image_id, f"contour_metrics_output_{params.output_slot}", result)
+    except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, **result}
 

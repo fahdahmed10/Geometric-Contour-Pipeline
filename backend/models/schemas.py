@@ -1,6 +1,7 @@
 from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
+from backend.models.snake_models import SnakePoint
 
 
 class CannyParameters(BaseModel):
@@ -91,6 +92,12 @@ class CircleRequest(BaseModel):
         if self.opencv_min_radius is not None and self.opencv_max_radius is not None and self.opencv_min_radius > self.opencv_max_radius:
             raise ValueError("opencv_min_radius must be less than or equal to opencv_max_radius")
         return self
+
+
+class ContourMetricsRequest(BaseModel):
+    input_source: str = Field("snake", pattern="^(snake|output1|output2|raw)$")
+    output_slot: str = Field("2", pattern="^(1|2)$")
+    points: list[SnakePoint] | None = Field(None, min_length=3)
 
 
 class CannyComparisonRequest(CannyParameters):

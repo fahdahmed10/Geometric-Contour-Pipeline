@@ -91,6 +91,53 @@ function CircleDetectionView({
   return <div className="circle-layout"><section className="algorithm-section hough-section circle-section circle-section-new"><div className="section-intro"><span className="section-number">02 / CIRCLE DETECTION</span><h2>Trace the roundness.</h2></div><div className="algorithm-body"><aside className="controls"><h3>Algorithm</h3><select className="input-select algorithm-select" value={circleAlgorithm} onChange={(event) => setCircleAlgorithm(event.target.value)}><option value="cht">Circular Hough Transform (from scratch)</option><option value="ransac">RANSAC 3-point fitting (from scratch)</option></select><h3 className="circle-parameter-heading">Parameters</h3><Slider label="Minimum diameter" name="min_diam" value={activeCircle.min_diam} min="4" max="1000" onChange={updateCircle} suffix=" px" /><Slider label="Maximum diameter" name="max_diam" value={activeCircle.max_diam} min="4" max="1000" onChange={updateCircle} suffix=" px" />{circleAlgorithm === "cht" ? <><Slider label="Minimum votes" name="min_votes" value={activeCircle.min_votes} min="5" max="1000" onChange={updateCircle} /><Slider label="Minimum coverage (360°)" name="min_coverage" value={activeCircle.min_coverage} min="0.1" max="1" step="0.05" onChange={updateCircle} /><Slider label="Minimum perimeter share" name="perim_frac" value={activeCircle.perim_frac} min="0" max="1" step="0.05" onChange={updateCircle} /><Slider label="Accumulator smooth" name="smooth" value={activeCircle.smooth} min="1" max="9" step="2" onChange={updateCircle} /><Slider label="Peak NMS window" name="nms_win" value={activeCircle.nms_win} min="3" max="21" step="2" onChange={updateCircle} /><Slider label="Gradient alignment" name="align_cos" value={activeCircle.align_cos} min="0" max="0.95" step="0.05" onChange={updateCircle} /><label className="check-control"><input type="checkbox" checked={activeCircle.refine} onChange={toggleCircleRefine} /> Least-squares refine</label></> : <><Slider label="Inlier tolerance" name="tol" value={activeCircle.tol} min="0.5" max="6" step="0.1" onChange={updateCircle} suffix=" px" /><Slider label="Iterations / round" name="max_iter" value={activeCircle.max_iter} min="100" max="10000" step="100" onChange={updateCircle} /><Slider label="Minimum inliers" name="min_inliers" value={activeCircle.min_inliers} min="5" max="1000" onChange={updateCircle} /><Slider label="Minimum perimeter share" name="perim_frac" value={activeCircle.perim_frac} min="0" max="1" step="0.05" onChange={updateCircle} /><Slider label="Minimum coverage (360°)" name="min_coverage" value={activeCircle.min_coverage} min="0.1" max="1" step="0.05" onChange={updateCircle} /><Slider label="Random seed" name="seed" value={activeCircle.seed} min="0" max="99" onChange={updateCircle} /><label className="check-control"><input type="checkbox" checked={activeCircle.refine} onChange={toggleCircleRefine} /> Least-squares refine</label></>}<button className="run" disabled={!imageId || busy || !circleInputReady || activeCircle.min_diam > activeCircle.max_diam || (compareCircle && !opencvBoundsValid)} onClick={runCircle}>{busy === "circle" ? "Running Circle Detection..." : "Run Circle Detection →"}</button>{activeCircle.min_diam > activeCircle.max_diam && <p className="validation-message">Minimum diameter must be less than or equal to maximum diameter.</p>}{compareCircle && !opencvBoundsValid && <p className="validation-message">OpenCV minimum radius must be less than or equal to maximum radius.</p>}</aside><div className="result-area"><div className="route-row"><div><h3>Input source</h3><p>Use the latest Canny result or either saved Canny output slot.</p></div><select className="input-select" value={circleInput} onChange={(event) => setCircleInput(event.target.value)}><option value="canny">Latest Canny edges</option><option value="output1">Canny Output 1</option><option value="output2">Canny Output 2</option></select></div><div className="viewer-grid"><div className="viewer-card input-card"><span className="viewer-label">CANNY INPUT</span>{selectedCircleInput ? <CircleDiameterPreview source={selectedCircleInput} minDiam={activeCircle.min_diam} maxDiam={activeCircle.max_diam} /> : <div className="viewer-empty">Run Canny or populate a Canny output</div>}</div><SlotCard slot="1" value={circleSlots["1"]} source={circleSlotSources["1"]} selected={circleSlot === "1"} onClick={() => setCircleSlot("1")} summary={customSummary(circleRuns["1"])} /><SlotCard slot="2" value={circleSlots["2"]} source={circleSlotSources["2"]} selected={circleSlot === "2"} onClick={() => setCircleSlot("2")} summary={customSummary(circleRuns["2"])} /></div><div className="route-row output-route"><div><h3>Save Circle result to</h3><p>Choose the destination before running Circle Detection.</p></div><div className="slot-toggle"><button className={circleSlot === "1" ? "chosen" : ""} onClick={() => setCircleSlot("1")}>Output 1</button><button className={circleSlot === "2" ? "chosen" : ""} onClick={() => setCircleSlot("2")}>Output 2</button></div></div></div></div></section>{compareCircle && <aside className="circle-opencv-sidebar"><CircleOpenCVControls values={circle.opencv} onChange={updateOpenCV} /></aside>}<div className="circle-comparison-area"><div className="compare-toggle"><label><input type="checkbox" checked={compareCircle} onChange={(event) => setCompareCircle(event.target.checked)} /> Compare with OpenCV</label>{compareCircle && <select className="comparison-select" value={circleComparisonSlot} onChange={(event) => setCircleComparisonSlot(event.target.value)}><option value="1">Compare Output 1</option><option value="2">Compare Output 2</option></select>}</div>{compareCircle && <CircleComparisonDetails run={comparisonRun} title={`${circleAlgorithm === "cht" ? "Circular Hough" : "RANSAC"} circle overlay`} />}</div><StagePipeline title="Circle stages" steps={selectedCircleRun?.steps} names={circleAlgorithm === "cht" ? ["input_edges", "accumulator", "circle_overlay"] : ["input_edges", "circle_overlay"]} selection={circlePipelineSelection} onSelectionChange={setCirclePipelineSelection} options={[{ value: "1", label: "Output 1" }, { value: "2", label: "Output 2" }, { value: "input", label: "Input" }]} /></div>;
 }
 
+function SnakeContourInput({ source, points, onAddPoint }) {
+  const containerRef = useRef(null);
+  const imageRef = useRef(null);
+  const [imageBox, setImageBox] = useState(null);
+  const updateImageBox = () => {
+    const container = containerRef.current;
+    const image = imageRef.current;
+    if (!container || !image?.naturalWidth || !image.naturalHeight) return;
+    const containerWidth = container.clientWidth;
+    const containerHeight = 350;
+    const scale = Math.min(containerWidth / image.naturalWidth, containerHeight / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    setImageBox({ left: (containerWidth - width) / 2, top: (containerHeight - height) / 2, width, height });
+  };
+  useEffect(() => {
+    updateImageBox();
+    const observer = new ResizeObserver(updateImageBox);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [source]);
+  const handleClick = (event) => {
+    const container = containerRef.current;
+    if (!container || !imageBox) return;
+    const bounds = container.getBoundingClientRect();
+    const x = event.clientX - bounds.left - imageBox.left;
+    const y = event.clientY - bounds.top - imageBox.top;
+    if (x < 0 || y < 0 || x > imageBox.width || y > imageBox.height) return;
+    onAddPoint({
+      x: x * imageRef.current.naturalWidth / imageBox.width,
+      y: y * imageRef.current.naturalHeight / imageBox.height,
+    });
+  };
+  return <div ref={containerRef} className="snake-contour-input" onClick={handleClick}>
+    {source ? <><img ref={imageRef} src={source} onLoad={updateImageBox} alt="Click around the object to initialize the Snake contour" />{imageBox && <svg className="snake-contour-overlay" style={{ left: imageBox.left, top: imageBox.top, width: imageBox.width, height: imageBox.height }} viewBox={`0 0 ${imageRef.current.naturalWidth} ${imageRef.current.naturalHeight}`} aria-hidden="true">
+      {points.length > 1 && <polyline points={points.map((point) => `${point.x},${point.y}`).join(" ")} />}
+      {points.map((point, index) => <circle key={`${point.x}-${point.y}-${index}`} cx={point.x} cy={point.y} r={Math.max(3, imageRef.current.naturalWidth / 180)} />)}
+    </svg>}</> : <div className="viewer-empty">Upload an image</div>}
+  </div>;
+}
+
+function SnakeDetectionView({ imageId, original, busy, snake, setSnake, snakePoints, setSnakePoints, snakeSlot, setSnakeSlot, snakeSlots, snakeSlotSources, runSnake, snakeResult, snakeMetrics, displayThickness, setDisplayThickness, showVertices, setShowVertices }) {
+  const updateSnake = (event) => setSnake((state) => ({ ...state, [event.target.name]: Number(event.target.value) }));
+  const addPoint = (point) => { if (snakePoints.length < snake.n_points) setSnakePoints((current) => [...current, point]); };
+  return <section className="algorithm-section hough-section snake-section"><div className="section-intro"><span className="section-number">02 / ACTIVE CONTOUR SNAKE</span><h2>Follow the boundary.</h2><p>Click exactly the selected number of samples around the object. The last sample closes to the first automatically.</p></div><div className="algorithm-body"><aside className="controls"><h3>Parameters</h3><Slider label="Contour samples" name="n_points" value={snake.n_points} min="3" max="100" onChange={updateSnake} /><Slider label="Alpha (continuity)" name="alpha" value={snake.alpha} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Beta (curvature)" name="beta" value={snake.beta} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Gamma (image)" name="gamma" value={snake.gamma} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Window size" name="window_size" value={snake.window_size} min="3" max="11" step="2" onChange={updateSnake} /><Slider label="Maximum iterations" name="max_iterations" value={snake.max_iterations} min="1" max="500" onChange={updateSnake} /><h3 className="circle-parameter-heading">Display</h3><Slider label="Contour thickness" name="displayThickness" value={displayThickness} min="1" max="8" onChange={(event) => setDisplayThickness(Number(event.target.value))} /><label className="check-control"><input type="checkbox" checked={showVertices} onChange={(event) => setShowVertices(event.target.checked)} /> Show final vertices</label><button className="run" disabled={!imageId || busy || snakePoints.length !== snake.n_points} onClick={runSnake}>{busy === "snake" ? "Running Snake..." : "Run Snake →"}</button></aside><div className="result-area"><div className="route-row"><div><h3>Initial contour</h3><p>{snakePoints.length} / {snake.n_points} samples selected. The closing edge is implicit.</p></div><button className="slot-toggle button-reset" type="button" onClick={() => setSnakePoints([])}>Clear points</button></div><div className="viewer-grid"><div className="viewer-card input-card"><span className="viewer-label">INPUT / INITIAL CONTOUR</span>{original ? <SnakeContourInput source={original} points={snakePoints} onAddPoint={addPoint} /> : <div className="viewer-empty">Upload an image</div>}</div><SlotCard slot="1" value={snakeSlots["1"]} source={snakeSlotSources["1"]} selected={snakeSlot === "1"} onClick={() => setSnakeSlot("1")} /><SlotCard slot="2" value={snakeSlots["2"]} source={snakeSlotSources["2"]} selected={snakeSlot === "2"} onClick={() => setSnakeSlot("2")} /></div><div className="route-row output-route"><div><h3>Save Snake result to</h3><p>Choose the destination before running Snake.</p></div><div className="slot-toggle"><button className={snakeSlot === "1" ? "chosen" : ""} onClick={() => setSnakeSlot("1")}>Output 1</button><button className={snakeSlot === "2" ? "chosen" : ""} onClick={() => setSnakeSlot("2")}>Output 2</button></div></div>{snakeResult && <p className="snake-result-summary">Iterations: {snakeResult.iterations_run} · Stop reason: {snakeResult.stop_reason} · Final points: {snakeResult.final_contour?.length ?? 0}</p>}{snakeMetrics && <div className="snake-metrics"><b>Chain code</b><code>{snakeMetrics.chain_code.slice(0, 240)}{snakeMetrics.chain_code.length > 240 ? `… (${snakeMetrics.chain_code.length} digits total)` : ""}</code><span>Perimeter: {Number(snakeMetrics.perimeter.toFixed(2))}</span><span>Shoelace area: {Number(snakeMetrics.shoelace_area.toFixed(2))}</span><span>Pixel fill: {snakeMetrics.pixel_fill_area} · Boundary pixels: {snakeMetrics.boundary_pixels}</span><span>Pick's theorem: {snakeMetrics.pick_theorem_valid ? "verified" : "failed"}</span></div>}</div></div></section>;
+}
+
 function AxisReferencePreview({ source, aMin, aMax }) {
   const canvasRef = useRef(null);
 
@@ -186,6 +233,10 @@ function App() {
   const [hough, setHough] = useState(initialHough);
   const [ellipse, setEllipse] = useState(initialEllipse);
   const [circle, setCircle] = useState(initialCircle);
+  const [snake, setSnake] = useState({ alpha: 1, beta: 1, gamma: 1.2, n_points: 20, window_size: 5, max_iterations: 200 });
+  const [displayThickness, setDisplayThickness] = useState(3);
+  const [showVertices, setShowVertices] = useState(false);
+  const [snakePoints, setSnakePoints] = useState([]);
   const [detectionAlgorithm, setDetectionAlgorithm] = useState("hough");
   const [circleAlgorithm, setCircleAlgorithm] = useState("cht");
   const [cannySlot, setCannySlot] = useState("1");
@@ -198,6 +249,7 @@ function App() {
   const [ellipseComparisonSlot, setEllipseComparisonSlot] = useState("2");
   const [circleInput, setCircleInput] = useState("canny");
   const [circleSlot, setCircleSlot] = useState("2");
+  const [snakeSlot, setSnakeSlot] = useState("2");
   const [circleComparisonSlot, setCircleComparisonSlot] = useState("2");
   const [cannySlots, setCannySlots] = useState({ "1": null, "2": null });
   const [cannySlotSources, setCannySlotSources] = useState({ "1": null, "2": null });
@@ -207,10 +259,14 @@ function App() {
   const [ellipseSlotSources, setEllipseSlotSources] = useState({ "1": null, "2": null });
   const [circleSlots, setCircleSlots] = useState({ "1": null, "2": null });
   const [circleSlotSources, setCircleSlotSources] = useState({ "1": null, "2": null });
+  const [snakeSlots, setSnakeSlots] = useState({ "1": null, "2": null });
+  const [snakeSlotSources, setSnakeSlotSources] = useState({ "1": null, "2": null });
   const [cannyResult, setCannyResult] = useState(null);
   const [houghResult, setHoughResult] = useState(null);
   const [ellipseResult, setEllipseResult] = useState(null);
   const [circleResult, setCircleResult] = useState(null);
+  const [snakeResult, setSnakeResult] = useState(null);
+  const [snakeMetrics, setSnakeMetrics] = useState(null);
   const [cannyRuns, setCannyRuns] = useState({});
   const [houghRuns, setHoughRuns] = useState({});
   const [ellipseRuns, setEllipseRuns] = useState({});
@@ -232,6 +288,41 @@ function App() {
     localStorage.setItem("contour-lab-theme", theme);
   }, [theme]);
 
+  useEffect(() => {
+    if (!original || !snakeResult) return undefined;
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      const drawContour = (points, color, width) => {
+        if (!points?.length) return;
+        context.beginPath();
+        points.forEach((point, index) => index ? context.lineTo(point.x, point.y) : context.moveTo(point.x, point.y));
+        context.closePath();
+        context.strokeStyle = color;
+        context.lineWidth = width;
+        context.stroke();
+      };
+      drawContour(snakeResult.initial_contour, "#f4be60", Math.max(1, displayThickness - 1));
+      drawContour(snakeResult.final_contour, "#7dd3c0", displayThickness);
+      if (showVertices) {
+        context.fillStyle = "#ffffff";
+        snakeResult.final_contour?.forEach((point) => {
+          context.beginPath();
+          context.arc(point.x, point.y, Math.max(2, displayThickness), 0, Math.PI * 2);
+          context.fill();
+        });
+      }
+      const output = canvas.toDataURL("image/png");
+      setSnakeSlots((state) => ({ ...state, [snakeSlot]: output }));
+    };
+    image.src = original;
+    return () => { image.onload = null; };
+  }, [original, snakeResult, displayThickness, showVertices, snakeSlot]);
+
   const update = (setter) => (event) => setter((state) => ({ ...state, [event.target.name]: Number(event.target.value) }));
   const updateCircle = (event) => setCircle((state) => ({ ...state, [circleAlgorithm]: { ...state[circleAlgorithm], [event.target.name]: Number(event.target.value) } }));
   const updateOpenCV = (event) => setCircle((state) => ({ ...state, opencv: { ...state.opencv, [event.target.name]: Number(event.target.value) } }));
@@ -244,6 +335,8 @@ function App() {
     setHoughSlots({ "1": null, "2": null }); setHoughSlotSources({ "1": null, "2": null });
     setEllipseSlots({ "1": null, "2": null }); setEllipseSlotSources({ "1": null, "2": null });
     setCircleSlots({ "1": null, "2": null }); setCircleSlotSources({ "1": null, "2": null });
+    setSnakeSlots({ "1": null, "2": null }); setSnakeSlotSources({ "1": null, "2": null }); setSnakeResult(null); setSnakeMetrics(null);
+    setSnakePoints([]);
     setError("The processing session expired after the backend restarted. Please upload the image again.");
   }
 
@@ -256,6 +349,8 @@ function App() {
     setHoughSlots({ "1": null, "2": null }); setHoughSlotSources({ "1": null, "2": null });
     setEllipseSlots({ "1": null, "2": null }); setEllipseSlotSources({ "1": null, "2": null });
     setCircleSlots({ "1": null, "2": null }); setCircleSlotSources({ "1": null, "2": null });
+    setSnakeSlots({ "1": null, "2": null }); setSnakeSlotSources({ "1": null, "2": null }); setSnakeResult(null); setSnakeMetrics(null);
+    setSnakePoints([]);
     const form = new FormData(); form.append("file", file);
     try {
       const uploadResponse = await fetch(`${API}/images`, { method: "POST", body: form });
@@ -327,6 +422,22 @@ function App() {
     } catch (caught) { setError(caught.message); } finally { setBusy(""); }
   }
 
+  async function runSnake() {
+    if (!imageId) return;
+    setBusy("snake"); setError("");
+    try {
+      const response = await fetch(`${API}/images/${imageId}/snake`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...snake, initial_contour: snakePoints, output_slot: snakeSlot }) });
+      const data = await response.json();
+      if (response.status === 404) { resetExpiredSession(); return; }
+      if (!response.ok) throw new Error(data.detail || "Snake processing failed");
+      setSnakeResult(data); setSnakeSlots((state) => ({ ...state, [snakeSlot]: data.output })); setSnakeSlotSources((state) => ({ ...state, [snakeSlot]: "Snake contour" }));
+      const metricsResponse = await fetch(`${API}/images/${imageId}/contour-metrics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input_source: "snake", output_slot: snakeSlot }) });
+      const metricsData = await metricsResponse.json();
+      if (!metricsResponse.ok) throw new Error(metricsData.detail || "Contour metrics failed");
+      setSnakeMetrics(metricsData);
+    } catch (caught) { setError(caught.message); } finally { setBusy(""); }
+  }
+
   const selectedInput = houghInput === "original" ? original : houghInput === "canny" ? cannyResult?.output : cannySlots[houghInput];
   const selectedEllipseInput = ellipseResult?.steps?.input_edges?.image || (ellipseInput === "canny" ? cannyResult?.output : cannySlots[ellipseInput.replace("output", "")]);
   const selectedCannyRun = cannyPipelineSelection === "input" ? null : cannyRuns[cannyPipelineSelection];
@@ -346,7 +457,7 @@ function App() {
     <header><div><p className="eyebrow">FROM-SCRATCH COMPUTER VISION / 02</p><h1>Contour <em>lab</em></h1><p className="lede">A deliberate workspace for tracing every transformation.</p></div><div className="header-actions"><button className="theme-toggle" type="button" aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`} onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}><span aria-hidden="true">{theme === "dark" ? "☼" : "☾"}</span>{theme === "dark" ? "Light mode" : "Dark mode"}</button><label className="upload">Upload image<input type="file" accept="image/*" onChange={upload} /></label></div></header>
     {error && <div className="error">{error}</div>}
     <section className="source-strip"><div><p className="eyebrow">SOURCE MATRIX</p><h2>{imageId ? "Original image loaded" : "Upload an image to begin"}</h2></div>{original ? <img src={original} alt="Original source" /> : <div className="source-empty">Your source will appear here</div>}</section>
-    <div className="detection-selector"><label htmlFor="detection-algorithm">Detection algorithm</label><select id="detection-algorithm" value={detectionAlgorithm} onChange={(event) => setDetectionAlgorithm(event.target.value)}><option value="hough">Hough Line Detection</option><option value="ellipse">Ellipse Detection</option><option value="circle">Circle Detection</option></select></div>
+    <div className="detection-selector"><label htmlFor="detection-algorithm">Detection algorithm</label><select id="detection-algorithm" value={detectionAlgorithm} onChange={(event) => setDetectionAlgorithm(event.target.value)}><option value="hough">Hough Line Detection</option><option value="ellipse">Ellipse Detection</option><option value="circle">Circle Detection</option><option value="snake">Snake</option></select></div>
 
     <section className="algorithm-section canny-section"><div className="section-intro"><span className="section-number">01 / CANNY EDGE DETECTION</span><h2>Find the edges.</h2><p>Build a binary edge map from the original source with the notebook's custom stages.</p></div><div className="algorithm-body"><aside className="controls"><h3>Parameters</h3><Slider label="Kernel size" name="kernel_size" value={canny.kernel_size} min="3" max="15" step="2" onChange={update(setCanny)} /><Slider label="Gaussian sigma" name="sigma" value={canny.sigma} min="0.1" max="10" step="0.1" onChange={update(setCanny)} /><Slider label="Low threshold" name="low_threshold" value={canny.low_threshold} min="0" max="500" onChange={update(setCanny)} /><Slider label="High threshold" name="high_threshold" value={canny.high_threshold} min="0" max="800" onChange={update(setCanny)} /><button className="run" disabled={!imageId || busy} onClick={runCanny}>{busy === "canny" ? "Running Canny..." : "Run Canny →"}</button></aside><div className="result-area"><div className="route-row"><div><h3>Input source</h3><p>Canny always starts from the original uploaded image.</p></div><select className="input-select" value="original" disabled><option value="original">Original image</option></select></div><div className="viewer-grid"><div className="viewer-card input-card"><span className="viewer-label">INPUT</span>{original ? <img src={original} alt="Original Canny input" /> : <div className="viewer-empty">Upload an image</div>}</div><SlotCard slot="1" value={cannySlots["1"]} source={cannySlotSources["1"]} selected={cannySlot === "1"} onClick={() => setCannySlot("1")} /><SlotCard slot="2" value={cannySlots["2"]} source={cannySlotSources["2"]} selected={cannySlot === "2"} onClick={() => setCannySlot("2")} /></div></div></div></section>
     <div className="compare-toggle"><label><input type="checkbox" checked={compareCanny} onChange={(event) => setCompareCanny(event.target.checked)} /> Compare with OpenCV</label>{compareCanny && <select className="comparison-select" value={cannyComparisonSlot} onChange={(event) => setCannyComparisonSlot(event.target.value)}><option value="1">Compare Output 1</option><option value="2">Compare Output 2</option></select>}</div>{compareCanny && <ComparisonPanel title="Canny edges" custom={cannyComparison?.output} opencv={cannyComparison?.opencv_output} metric="Same thresholds · same blurred input" />}<StagePipeline title="Canny stages" steps={selectedCannyRun?.steps} names={["grayscale", "gaussian_blur", "gradient_magnitude", "gradient_direction", "non_maximum_suppression", "edges"]} selection={cannyPipelineSelection} onSelectionChange={setCannyPipelineSelection} options={[{ value: "1", label: "Output 1" }, { value: "2", label: "Output 2" }, { value: "input", label: "Input" }]} />
@@ -362,6 +473,7 @@ function App() {
       <div className="compare-toggle"><label><input type="checkbox" checked={compareCircle} onChange={(event) => setCompareCircle(event.target.checked)} /> Compare with OpenCV</label>{compareCircle && <select className="comparison-select" value={circleComparisonSlot} onChange={(event) => setCircleComparisonSlot(event.target.value)}><option value="1">Compare Output 1</option><option value="2">Compare Output 2</option></select>}</div>{compareCircle && <ComparisonPanel title={`${circleAlgorithm === "cht" ? "Circular Hough" : "RANSAC"} circle overlay`} custom={circleComparison?.output} opencv={circleComparison?.opencv_output} metric="Same Canny blur · same radius bounds" />}<StagePipeline title="Circle stages" steps={selectedCircleRun?.steps} names={circleAlgorithm === "cht" ? ["input_edges", "accumulator", "circle_overlay"] : ["input_edges", "circle_overlay"]} selection={circlePipelineSelection} onSelectionChange={setCirclePipelineSelection} options={[{ value: "1", label: "Output 1" }, { value: "2", label: "Output 2" }, { value: "input", label: "Input" }]} />
     </>}
     {detectionAlgorithm === "circle" && <CircleDetectionView imageId={imageId} busy={busy} circleAlgorithm={circleAlgorithm} setCircleAlgorithm={setCircleAlgorithm} circle={circle} updateCircle={updateCircle} toggleCircleRefine={toggleCircleRefine} circleInput={circleInput} setCircleInput={setCircleInput} selectedCircleInput={selectedCircleInput} circleInputReady={circleInputReady} runCircle={runCircle} circleSlots={circleSlots} circleSlotSources={circleSlotSources} circleSlot={circleSlot} setCircleSlot={setCircleSlot} circleRuns={circleRuns} compareCircle={compareCircle} setCompareCircle={setCompareCircle} circleComparisonSlot={circleComparisonSlot} setCircleComparisonSlot={setCircleComparisonSlot} selectedCircleRun={selectedCircleRun} circlePipelineSelection={circlePipelineSelection} setCirclePipelineSelection={setCirclePipelineSelection} updateOpenCV={updateOpenCV} />}
+    {detectionAlgorithm === "snake" && <SnakeDetectionView imageId={imageId} original={original} busy={busy} snake={snake} setSnake={setSnake} snakePoints={snakePoints} setSnakePoints={setSnakePoints} snakeSlot={snakeSlot} setSnakeSlot={setSnakeSlot} snakeSlots={snakeSlots} snakeSlotSources={snakeSlotSources} runSnake={runSnake} snakeResult={snakeResult} snakeMetrics={snakeMetrics} displayThickness={displayThickness} setDisplayThickness={setDisplayThickness} showVertices={showVertices} setShowVertices={setShowVertices} />}
   </main>;
 }
 

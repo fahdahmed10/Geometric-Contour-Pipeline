@@ -8,7 +8,7 @@ import numpy as np
 @dataclass
 class ImageSession:
     original: np.ndarray
-    cache: dict[str, np.ndarray] = field(default_factory=dict)
+    cache: dict[str, object] = field(default_factory=dict)
 
 
 class ImageManager:
@@ -31,10 +31,10 @@ class ImageManager:
             except KeyError as exc:
                 raise KeyError("Image session was not found or has expired") from exc
 
-    def get_cached(self, image_id: str, key: str) -> np.ndarray | None:
+    def get_cached(self, image_id: str, key: str) -> object | None:
         return self.get(image_id).cache.get(key)
 
-    def cache(self, image_id: str, key: str, value: np.ndarray) -> np.ndarray:
+    def cache(self, image_id: str, key: str, value: object) -> object:
         with self._lock:
             self.get(image_id).cache[key] = value
         return value

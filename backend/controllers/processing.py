@@ -4,12 +4,51 @@ from backend.core.canny import canny_edge_detector
 from backend.core.circles import circular_hough, diameter_to_radii, opencv_circles, ransac_circles
 from backend.core.ellipse import EllipseParams, detect_ellipses, draw_ellipse
 from backend.core.hough import detect_peaks, draw_lines, hough_transform
-from backend.core.image_codec import matrix_to_data_url, serialize_step
+from backend.core.image_codec import encode_image, matrix_to_data_url, serialize_step
+from backend.core.snake.constants import DEFAULT_PARAMS
+from backend.core.snake.pipeline import run_pipeline
+from backend.core.contour_metrics import measure_contour
 from backend.core.canny import canny_edge_detector as notebook_canny
 from backend.models.image_manager import ImageManager
 from backend.models.schemas import CannyComparisonRequest, CannyParameters, CircleRequest, EllipseParameters, HoughParameters
+from backend.models.snake_models import SnakeRequest
 import cv2
 import numpy as np
+
+
+def run_snake(manager: ImageManager, image_id: str, params: SnakeRequest) -> dict[str, object]:
+    """Run the complete snake pipeline ported from cv-task2."""
+    session = manager.get(image_id)
+    if len(params.initial_contour) != params.n_points:
+        raise ValueError(f"initial_contour must contain exactly n_points ({params.n_points}) samples")
+    values = params.model_dump(exclude={"initial_contour", "output_slot"})
+    pipeline_params = {**DEFAULT_PARAMS, **values}
+    contour_spec = {
+        "type": "polygon",
+        "points": [[point.x, point.y] for point in params.initial_contour],
+    }
+    result = run_pipeline(encode_image(session.original), pipeline_params, contour_spec)
+    if result.get("cancelled"):
+        raise ValueError("Snake processing was cancelled")
+    legacy_metric_keys = {
+        "perimeter",
+        "perimeter_chain",
+        "perimeter_polygon",
+        "area",
+        "area_shoelace",
+        "area_chain",
+        "area_scanline",
+        "perimeter_difference",
+        "area_chain_difference",
+        "area_scanline_difference",
+    }
+    response = {
+        key: value
+        for key, value in result.items()
+        if key not in {"overlay_image", "history", *legacy_metric_keys}
+    }
+    response["output"] = result["overlay_image"]
+    return response
 
 
 def run_canny(manager: ImageManager, image_id: str, params: CannyParameters) -> dict[str, object]:
@@ -33,6 +72,15 @@ def run_canny(manager: ImageManager, image_id: str, params: CannyParameters) -> 
         "steps": {name: serialize_step(value) for name, value in steps.items()},
         "parameters": params.model_dump(),
     }
+
+
+def run_contour_metrics(
+    manager: ImageManager,
+    image_id: str,
+    points: list[tuple[float, float]],
+) -> dict[str, object]:
+    """Measure a finalized Snake contour using the shared pure core."""
+    return measure_contour(points)
 
 
 def run_canny_comparison(original: np.ndarray, request: CannyComparisonRequest) -> dict[str, object]:
