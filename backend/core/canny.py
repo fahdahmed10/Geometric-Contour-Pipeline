@@ -101,7 +101,11 @@ def canny_edge_detector(
     image: np.ndarray, kernel_size: int, sigma: float, high_threshold: float, low_threshold: float
 ) -> dict[str, np.ndarray]:
     validate_parameters(kernel_size, sigma, high_threshold, low_threshold)
-    grayscale = image if image.ndim == 2 else np.dot(image[..., :3], [0.299, 0.587, 0.114])
+    if image.ndim == 2:
+        grayscale = image
+    else:
+        luminance = np.dot(image[..., :3].astype(np.float64), [0.299, 0.587, 0.114])
+        grayscale = np.floor(luminance + 0.5).clip(0, 255).astype(np.uint8)
     blurred = gaussian_blur(grayscale, kernel_size, sigma)
     gradient, angles = apply_sobel(blurred)
     suppressed = non_maximum_suppression(gradient, angles)
