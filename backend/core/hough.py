@@ -29,9 +29,19 @@ def detect_peaks(accumulator: np.ndarray, radii: np.ndarray, thetas: np.ndarray,
     return lines
 
 
-def draw_lines(edges: np.ndarray, lines: list[dict[str, float]]) -> np.ndarray:
-    canvas = np.zeros((*edges.shape, 3), dtype=np.uint8)
-    canvas[edges > 0] = (220, 245, 106)
+def draw_lines(
+    edges: np.ndarray,
+    lines: list[dict[str, float]],
+    background: np.ndarray | None = None,
+) -> np.ndarray:
+    if background is None:
+        canvas = np.zeros((*edges.shape, 3), dtype=np.uint8)
+        canvas[edges > 0] = (220, 245, 106)
+    else:
+        canvas = np.asarray(background).copy()
+        if canvas.ndim == 2:
+            canvas = cv2.cvtColor(canvas.astype(np.uint8), cv2.COLOR_GRAY2RGB)
+        canvas = np.clip(canvas, 0, 255).astype(np.uint8)
     height, width = edges.shape
     for line in lines:
         theta = np.deg2rad(line["theta"])

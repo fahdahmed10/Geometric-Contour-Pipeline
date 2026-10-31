@@ -155,10 +155,15 @@ def run_canny_comparison(original: np.ndarray, request: CannyComparisonRequest) 
     }
 
 
-def run_hough(manager: ImageManager, edges, params: HoughParameters) -> dict[str, object]:
+def run_hough(
+    manager: ImageManager,
+    edges,
+    params: HoughParameters,
+    original: np.ndarray | None = None,
+) -> dict[str, object]:
     accumulator, radii, thetas = hough_transform(edges, params.radius_res, params.theta_res)
     lines = detect_peaks(accumulator, radii, thetas, params.max_lines, params.vote_threshold)
-    overlay = draw_lines(edges, lines)
+    overlay = draw_lines(edges, lines, background=original)
     native_edges = np.clip(edges, 0, 255).astype(np.uint8)
     native_lines = cv2.HoughLines(
         native_edges,
@@ -166,7 +171,11 @@ def run_hough(manager: ImageManager, edges, params: HoughParameters) -> dict[str
         np.deg2rad(params.theta_res),
         params.vote_threshold,
     )
-    native_overlay = cv2.cvtColor(native_edges, cv2.COLOR_GRAY2RGB)
+    native_overlay = (
+        np.asarray(original).copy()
+        if original is not None
+        else cv2.cvtColor(native_edges, cv2.COLOR_GRAY2RGB)
+    )
     if native_lines is not None:
         for rho, theta in native_lines[: params.max_lines, 0]:
             cosine, sine = np.cos(theta), np.sin(theta)

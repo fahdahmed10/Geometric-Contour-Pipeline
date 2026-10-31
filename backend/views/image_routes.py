@@ -84,7 +84,12 @@ def process_hough(image_id: str, params: HoughRequest) -> dict[str, object]:
     if edges is None:
         raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Hough input")
     try:
-        result = run_hough(image_manager, edges, HoughParameters(**params.model_dump(exclude={"input_source", "output_slot"})))
+        result = run_hough(
+            image_manager,
+            edges,
+            HoughParameters(**params.model_dump(exclude={"input_source", "output_slot"})),
+            original=session.original,
+        )
         image_manager.cache(image_id, f"hough_output_{params.output_slot}", result.pop("_output_matrix"))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -201,7 +206,7 @@ def process_pipeline(image_id: str, request: PipelineRequest) -> dict[str, objec
         if request.hough_input == "original":
             original = image_manager.get(image_id).original
             hough_input = (original[..., 0] * 0.299 + original[..., 1] * 0.587 + original[..., 2] * 0.114)
-        hough_result = run_hough(image_manager, hough_input, request.hough)
+        hough_result = run_hough(image_manager, hough_input, request.hough, original=image_manager.get(image_id).original)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, "original": matrix_to_data_url(image_manager.get(image_id).original, color=True), "canny": canny_result, "hough": hough_result}
