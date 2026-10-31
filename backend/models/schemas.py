@@ -60,14 +60,14 @@ class CircleRequest(BaseModel):
     compare_opencv: bool = False
 
     # Circular Hough Transform controls.
-    min_diam: int = Field(45, ge=4, le=10000)
-    max_diam: int = Field(125, ge=4, le=10000)
-    min_votes: int = Field(48, ge=5, le=100000)
-    min_coverage: float = Field(0.6, ge=0.1, le=1.0)
-    perim_frac: float = Field(0.4, ge=0.0, le=1.0)
+    min_diam: int = Field(30, ge=4, le=10000)
+    max_diam: int = Field(400, ge=4, le=10000)
+    min_votes: int = Field(32, ge=5, le=100000)
+    min_coverage: float = Field(0.4, ge=0.1, le=1.0)
+    perim_frac: float = Field(0.25, ge=0.0, le=1.0)
     smooth: int = Field(3, ge=1, le=9)
     nms_win: int = Field(7, ge=3, le=21)
-    align_cos: float = Field(0.7, ge=0.0, le=0.95)
+    align_cos: float = Field(0.6, ge=0.0, le=0.95)
     refine: bool = True
 
     # RANSAC controls.

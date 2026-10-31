@@ -7,9 +7,9 @@ const initialCanny = { kernel_size: 7, sigma: 1, low_threshold: 80, high_thresho
 const initialHough = { radius_res: 1, theta_res: 1, max_lines: 100, vote_threshold: 2 };
 const initialEllipse = { a_min: 10, a_max: 150, vote_threshold: 40, fit_tol: 2, min_support: 0.5, max_ellipses: 3, ransac_iters: 300 };
 const initialCircle = {
-  cht: { min_diam: 45, max_diam: 125, min_votes: 48, min_coverage: 0.6, perim_frac: 0.4, smooth: 3, nms_win: 7, align_cos: 0.7, refine: true },
+  cht: { min_diam: 30, max_diam: 400, min_votes: 32, min_coverage: 0.4, perim_frac: 0.25, smooth: 3, nms_win: 7, align_cos: 0.6, refine: true },
   ransac: { min_diam: 45, max_diam: 125, tol: 2, max_iter: 1000, min_inliers: 48, perim_frac: 0.4, min_coverage: 0.6, refine: true, seed: 0 },
-  opencv: { dp: 1, min_dist: 19.1, param1: 200, param2: 28.8, min_radius: 19.1, max_radius: 71.9 },
+  opencv: { dp: 1, min_dist: 19.1, param1: 200, param2: 28.8, min_radius: 15, max_radius: 200 },
 };
 
 function Slider({ label, name, value, min, max, step = 1, onChange, suffix = "" }) {
