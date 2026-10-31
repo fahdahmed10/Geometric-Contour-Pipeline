@@ -77,5 +77,5 @@ def draw_lines(
         point_a = (int(x0 + 2000 * -sine), int(y0 + 2000 * cosine))
         point_b = (int(x0 - 2000 * -sine), int(y0 - 2000 * cosine))
         cv2.clipLine((0, 0, width, height), point_a, point_b)
-        cv2.line(canvas, point_a, point_b, (255, 110, 82), 1)
+        cv2.line(canvas, point_a, point_b, (190, 35, 35), 1)
     return canvas

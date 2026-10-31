@@ -182,7 +182,7 @@ def run_hough(
             x0, y0 = cosine * rho, sine * rho
             point_a = (int(x0 + 2000 * -sine), int(y0 + 2000 * cosine))
             point_b = (int(x0 - 2000 * -sine), int(y0 - 2000 * cosine))
-            cv2.line(native_overlay, point_a, point_b, (79, 70, 229), 1)
+            cv2.line(native_overlay, point_a, point_b, (35, 75, 170), 1)
     return {
         "output": matrix_to_data_url(overlay, color=True),
         "opencv_output": matrix_to_data_url(native_overlay, color=True),
