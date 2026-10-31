@@ -16,16 +16,42 @@ def hough_transform(edges: np.ndarray, radius_res: float, theta_res: float) -> t
     return accumulator, radii, thetas
 
 
-def detect_peaks(accumulator: np.ndarray, radii: np.ndarray, thetas: np.ndarray, max_lines: int, threshold: int) -> list[dict[str, float]]:
-    candidates = np.argwhere(accumulator >= threshold)
-    ranked = sorted(candidates, key=lambda point: int(accumulator[tuple(point)]), reverse=True)
+def detect_peaks(
+    accumulator: np.ndarray,
+    radii: np.ndarray,
+    thetas: np.ndarray,
+    max_lines: int,
+    threshold: int,
+    neighborhood: int = 1,
+) -> list[dict[str, float]]:
+    """Select local accumulator maxima using the notebook's suppression rule."""
+    if neighborhood < 0:
+        raise ValueError("neighborhood must be non-negative")
+    candidates: list[tuple[int, int, int]] = []
+    radius_count, theta_count = accumulator.shape
+    for radius_index, theta_index in np.argwhere(accumulator >= threshold):
+        vote = int(accumulator[radius_index, theta_index])
+        is_peak = True
+        for radius_offset in range(-neighborhood, neighborhood + 1):
+            for theta_offset in range(-neighborhood, neighborhood + 1):
+                neighbor_radius = radius_index + radius_offset
+                neighbor_theta = theta_index + theta_offset
+                if (
+                    0 <= neighbor_radius < radius_count
+                    and 0 <= neighbor_theta < theta_count
+                    and accumulator[neighbor_radius, neighbor_theta] > vote
+                ):
+                    is_peak = False
+                    break
+            if not is_peak:
+                break
+        if is_peak:
+            candidates.append((vote, int(radius_index), int(theta_index)))
+    candidates.sort(reverse=True)
     lines: list[dict[str, float]] = []
-    for radius_index, theta_index in ranked:
+    for vote, radius_index, theta_index in candidates[:max_lines]:
         radius, theta = float(radii[radius_index]), float(thetas[theta_index])
-        if all(abs(radius - line["rho"]) > 10 or abs(theta - line["theta"]) > 10 for line in lines):
-            lines.append({"rho": radius, "theta": theta, "votes": int(accumulator[radius_index, theta_index])})
-        if len(lines) >= max_lines:
-            break
+        lines.append({"rho": radius, "theta": theta, "votes": vote})
     return lines
 
 
