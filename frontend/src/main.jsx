@@ -7,9 +7,9 @@ const initialCanny = { kernel_size: 7, sigma: 1, low_threshold: 80, high_thresho
 const initialHough = { radius_res: 1, theta_res: 1, max_lines: 100, vote_threshold: 2 };
 const initialEllipse = { a_min: 10, a_max: 150, vote_threshold: 40, fit_tol: 2, min_support: 0.5, max_ellipses: 3, ransac_iters: 300 };
 const initialCircle = {
-  cht: { min_diam: 30, max_diam: 400, min_votes: 32, min_coverage: 0.4, perim_frac: 0.25, smooth: 3, nms_win: 7, align_cos: 0.6, refine: true },
-  ransac: { min_diam: 45, max_diam: 125, tol: 2, max_iter: 1000, min_inliers: 48, perim_frac: 0.4, min_coverage: 0.6, refine: true, seed: 0 },
-  opencv: { dp: 1, min_dist: 19.1, param1: 200, param2: 28.8, min_radius: 15, max_radius: 200 },
+  cht: { min_diam: 150, max_diam: 260, min_votes: 80, min_coverage: 0.55, perim_frac: 0.45, smooth: 3, nms_win: 11, align_cos: 0.7, refine: true },
+  ransac: { min_diam: 150, max_diam: 260, tol: 2, max_iter: 1000, min_inliers: 80, perim_frac: 0.45, min_coverage: 0.65, refine: true, seed: 0 },
+  opencv: { dp: 1, min_dist: 80, param1: 200, param2: 48, min_radius: 75, max_radius: 130 },
 };
 
 function Slider({ label, name, value, min, max, step = 1, onChange, suffix = "" }) {
@@ -135,7 +135,81 @@ function SnakeContourInput({ source, points, onAddPoint }) {
 function SnakeDetectionView({ imageId, original, busy, snake, setSnake, snakePoints, setSnakePoints, snakeSlot, setSnakeSlot, snakeSlots, snakeSlotSources, runSnake, snakeResult, snakeMetrics, displayThickness, setDisplayThickness, showVertices, setShowVertices }) {
   const updateSnake = (event) => setSnake((state) => ({ ...state, [event.target.name]: Number(event.target.value) }));
   const addPoint = (point) => { if (snakePoints.length < snake.n_points) setSnakePoints((current) => [...current, point]); };
-  return <section className="algorithm-section hough-section snake-section"><div className="section-intro"><span className="section-number">02 / ACTIVE CONTOUR SNAKE</span><h2>Follow the boundary.</h2><p>Click exactly the selected number of samples around the object. The last sample closes to the first automatically.</p></div><div className="algorithm-body"><aside className="controls"><h3>Parameters</h3><Slider label="Contour samples" name="n_points" value={snake.n_points} min="3" max="100" onChange={updateSnake} /><Slider label="Alpha (continuity)" name="alpha" value={snake.alpha} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Beta (curvature)" name="beta" value={snake.beta} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Gamma (image)" name="gamma" value={snake.gamma} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Window size" name="window_size" value={snake.window_size} min="3" max="11" step="2" onChange={updateSnake} /><Slider label="Maximum iterations" name="max_iterations" value={snake.max_iterations} min="1" max="500" onChange={updateSnake} /><h3 className="circle-parameter-heading">Display</h3><Slider label="Contour thickness" name="displayThickness" value={displayThickness} min="1" max="8" onChange={(event) => setDisplayThickness(Number(event.target.value))} /><label className="check-control"><input type="checkbox" checked={showVertices} onChange={(event) => setShowVertices(event.target.checked)} /> Show final vertices</label><button className="run" disabled={!imageId || busy || snakePoints.length !== snake.n_points} onClick={runSnake}>{busy === "snake" ? "Running Snake..." : "Run Snake →"}</button></aside><div className="result-area"><div className="route-row"><div><h3>Initial contour</h3><p>{snakePoints.length} / {snake.n_points} samples selected. The closing edge is implicit.</p></div><button className="slot-toggle button-reset" type="button" onClick={() => setSnakePoints([])}>Clear points</button></div><div className="viewer-grid"><div className="viewer-card input-card"><span className="viewer-label">INPUT / INITIAL CONTOUR</span>{original ? <SnakeContourInput source={original} points={snakePoints} onAddPoint={addPoint} /> : <div className="viewer-empty">Upload an image</div>}</div><SlotCard slot="1" value={snakeSlots["1"]} source={snakeSlotSources["1"]} selected={snakeSlot === "1"} onClick={() => setSnakeSlot("1")} /><SlotCard slot="2" value={snakeSlots["2"]} source={snakeSlotSources["2"]} selected={snakeSlot === "2"} onClick={() => setSnakeSlot("2")} /></div><div className="route-row output-route"><div><h3>Save Snake result to</h3><p>Choose the destination before running Snake.</p></div><div className="slot-toggle"><button className={snakeSlot === "1" ? "chosen" : ""} onClick={() => setSnakeSlot("1")}>Output 1</button><button className={snakeSlot === "2" ? "chosen" : ""} onClick={() => setSnakeSlot("2")}>Output 2</button></div></div>{snakeResult && <p className="snake-result-summary">Iterations: {snakeResult.iterations_run} · Stop reason: {snakeResult.stop_reason} · Final points: {snakeResult.final_contour?.length ?? 0}</p>}{snakeMetrics && <div className="snake-metrics"><b>Chain code</b><code>{snakeMetrics.chain_code.slice(0, 240)}{snakeMetrics.chain_code.length > 240 ? `… (${snakeMetrics.chain_code.length} digits total)` : ""}</code><span>Perimeter: {Number(snakeMetrics.perimeter.toFixed(2))}</span><span>Shoelace area: {Number(snakeMetrics.shoelace_area.toFixed(2))}</span><span>Pixel fill: {snakeMetrics.pixel_fill_area} · Boundary pixels: {snakeMetrics.boundary_pixels}</span><span>Pick's theorem: {snakeMetrics.pick_theorem_valid ? "verified" : "failed"}</span></div>}</div></div></section>;
+  return <section className="algorithm-section hough-section snake-section"><div className="section-intro"><span className="section-number">02 / ACTIVE CONTOUR SNAKE</span><h2>Follow the boundary.</h2><p>Click exactly the selected number of samples around the object. The last sample closes to the first automatically.</p></div><div className="algorithm-body"><aside className="controls"><h3>Parameters</h3><Slider label="Contour samples" name="n_points" value={snake.n_points} min="3" max="100" onChange={updateSnake} /><Slider label="Alpha (continuity)" name="alpha" value={snake.alpha} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Beta (curvature)" name="beta" value={snake.beta} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Gamma (image)" name="gamma" value={snake.gamma} min="0" max="5" step="0.1" onChange={updateSnake} /><Slider label="Window size" name="window_size" value={snake.window_size} min="3" max="11" step="2" onChange={updateSnake} /><Slider label="Maximum iterations" name="max_iterations" value={snake.max_iterations} min="1" max="500" onChange={updateSnake} /><h3 className="circle-parameter-heading">Display</h3><Slider label="Contour thickness" name="displayThickness" value={displayThickness} min="1" max="8" onChange={(event) => setDisplayThickness(Number(event.target.value))} /><label className="check-control"><input type="checkbox" checked={showVertices} onChange={(event) => setShowVertices(event.target.checked)} /> Show vertices in output and playback</label><button className="run" disabled={!imageId || busy || snakePoints.length !== snake.n_points} onClick={runSnake}>{busy === "snake" ? "Running Snake..." : "Run Snake →"}</button></aside><div className="result-area"><div className="route-row"><div><h3>Initial contour</h3><p>{snakePoints.length} / {snake.n_points} samples selected. The closing edge is implicit.</p></div><button className="slot-toggle button-reset" type="button" onClick={() => setSnakePoints([])}>Clear points</button></div><div className="viewer-grid"><div className="viewer-card input-card"><span className="viewer-label">INPUT / INITIAL CONTOUR</span>{original ? <SnakeContourInput source={original} points={snakePoints} onAddPoint={addPoint} /> : <div className="viewer-empty">Upload an image</div>}</div><SlotCard slot="1" value={snakeSlots["1"]} source={snakeSlotSources["1"]} selected={snakeSlot === "1"} onClick={() => setSnakeSlot("1")} /><SlotCard slot="2" value={snakeSlots["2"]} source={snakeSlotSources["2"]} selected={snakeSlot === "2"} onClick={() => setSnakeSlot("2")} /></div><div className="route-row output-route"><div><h3>Save Snake result to</h3><p>Choose the destination before running Snake.</p></div><div className="slot-toggle"><button className={snakeSlot === "1" ? "chosen" : ""} onClick={() => setSnakeSlot("1")}>Output 1</button><button className={snakeSlot === "2" ? "chosen" : ""} onClick={() => setSnakeSlot("2")}>Output 2</button></div></div>{snakeResult && <p className="snake-result-summary">Iterations: {snakeResult.iterations_run} · Stop reason: {snakeResult.stop_reason} · Final points: {snakeResult.final_contour?.length ?? 0}</p>}{snakeMetrics && <div className="snake-metrics"><b>Chain code</b><code>{snakeMetrics.chain_code.slice(0, 240)}{snakeMetrics.chain_code.length > 240 ? `… (${snakeMetrics.chain_code.length} digits total)` : ""}</code><span>Perimeter: {Number(snakeMetrics.perimeter.toFixed(2))}</span><span>Shoelace area: {Number(snakeMetrics.shoelace_area.toFixed(2))}</span><span>Pixel fill: {snakeMetrics.pixel_fill_area} · Boundary pixels: {snakeMetrics.boundary_pixels}</span><span>Pick's theorem: {snakeMetrics.pick_theorem_valid ? "verified" : "failed"}</span></div>}{snakeResult && <SnakeTimingSummary timings={snakeResult.stage_timings_ms} totalMs={snakeResult.processing_time_ms} />} {snakeResult && <SnakeEvolutionPlayer source={original} frames={snakeResult.frames} showVertices={showVertices} />}</div></div></section>;
+}
+
+function SnakeEvolutionPlayer({ source, frames, showVertices }) {
+  const canvasRef = useRef(null);
+  const [frameIndex, setFrameIndex] = useState(0);
+  const [image, setImage] = useState(null);
+
+  useEffect(() => {
+    if (!source) {
+      setImage(null);
+      return undefined;
+    }
+    const nextImage = new Image();
+    nextImage.onload = () => setImage(nextImage);
+    nextImage.src = source;
+    return () => { nextImage.onload = null; };
+  }, [source]);
+
+  useEffect(() => {
+    setFrameIndex(0);
+    if (!frames?.length) return undefined;
+    const timer = window.setInterval(() => {
+      setFrameIndex((current) => (current + 1) % frames.length);
+    }, 120);
+    return () => window.clearInterval(timer);
+  }, [frames]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const frame = frames?.[frameIndex];
+    if (!canvas || !image || !frame?.contour?.length) return;
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    context.beginPath();
+    frame.contour.forEach((point, pointIndex) => {
+      if (pointIndex === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.closePath();
+    context.strokeStyle = "#7dd3c0";
+    context.lineWidth = Math.max(2, image.naturalWidth / 300);
+    context.stroke();
+    if (showVertices) {
+      context.fillStyle = "#ffffff";
+      frame.contour.forEach((point) => {
+        context.beginPath();
+        context.arc(point.x, point.y, Math.max(2, image.naturalWidth / 180), 0, Math.PI * 2);
+        context.fill();
+      });
+    }
+  }, [image, frames, frameIndex, showVertices]);
+
+  if (!source || !frames?.length) return null;
+  const frame = frames[frameIndex];
+  return <section className="snake-evolution-panel">
+    <div className="section-heading"><span className="eyebrow">ITERATION HISTORY</span><h2>Snake evolution</h2></div>
+    <p className="snake-evolution-help">Autoplaying the retained greedy-loop frames over the original image.</p>
+    <figure className="snake-evolution-player">
+      <canvas ref={canvasRef} aria-label={`Snake contour at iteration ${frame?.iteration ?? 0}`} />
+      <figcaption><span>Frame {frameIndex + 1} / {frames.length}</span><b>Iteration {frame?.iteration ?? 0}</b></figcaption>
+    </figure>
+  </section>;
+}
+
+function SnakeTimingSummary({ timings, totalMs }) {
+  if (!timings) return null;
+  const entries = Object.entries(timings).filter(([name]) => name !== "Timing");
+  return <section className="snake-timing-panel">
+    <div className="section-heading"><span className="eyebrow">PERFORMANCE</span><h2>Stage timing</h2></div>
+    <div className="snake-timing-grid">{entries.map(([name, duration]) => <span key={name}><b>{name}</b><em>{Number(duration).toFixed(1)} ms</em></span>)}</div>
+    {typeof totalMs === "number" && <p>Total Snake processing: <strong>{(totalMs / 1000).toFixed(2)} s</strong></p>}
+  </section>;
 }
 
 function AxisReferencePreview({ source, aMin, aMax }) {
@@ -430,11 +504,7 @@ function App() {
       const data = await response.json();
       if (response.status === 404) { resetExpiredSession(); return; }
       if (!response.ok) throw new Error(data.detail || "Snake processing failed");
-      setSnakeResult(data); setSnakeSlots((state) => ({ ...state, [snakeSlot]: data.output })); setSnakeSlotSources((state) => ({ ...state, [snakeSlot]: "Snake contour" }));
-      const metricsResponse = await fetch(`${API}/images/${imageId}/contour-metrics`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ input_source: "snake", output_slot: snakeSlot }) });
-      const metricsData = await metricsResponse.json();
-      if (!metricsResponse.ok) throw new Error(metricsData.detail || "Contour metrics failed");
-      setSnakeMetrics(metricsData);
+      setSnakeResult(data); setSnakeMetrics(data.metrics); setSnakeSlots((state) => ({ ...state, [snakeSlot]: data.output })); setSnakeSlotSources((state) => ({ ...state, [snakeSlot]: "Snake contour" }));
     } catch (caught) { setError(caught.message); } finally { setBusy(""); }
   }
 

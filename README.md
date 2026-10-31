@@ -77,6 +77,14 @@ M(x, y) = sqrt(Gx(x, y)^2 + Gy(x, y)^2)
 Non-maximum suppression keeps thin local maxima, and hysteresis links strong
 edges through weaker connected pixels.
 
+**Examples**
+
+![Canny input and output slots](./docs/images/Canny%20-%20IO.png)
+
+![Canny custom result compared with OpenCV](./docs/images/Canny%20Compare.png)
+
+![Canny processing stages](./docs/images/Canny-Stages.png)
+
 ### Hough lines
 
 An image point `(x, y)` votes for lines in polar form:
@@ -87,17 +95,19 @@ rho = x cos(theta) + y sin(theta)
 
 Peaks in the accumulator represent likely image lines.
 
-**Examples to add**
+**Examples**
 
 <!-- Section screenshot: input source, radius/theta resolution, maximum lines,
      vote threshold, Output 1/Output 2, and accumulator stage. -->
-![Hough section example](./docs/images/hough-section-example-1-placeholder.png)
+![Hough input and output slots](./docs/images/Hough%20-%20IO.png)
 
-<!-- Focused output: detected lines drawn over the source image. -->
-![Hough output example](./docs/images/hough-output-example-2-placeholder.png)
+![Hough custom result compared with OpenCV](./docs/images/Hough%20Compare.png)
 
-Record the input source, parameter values, selected output slot, and the
-detected-line result with the screenshots.
+![Hough processing stages](./docs/images/Hough%20Stages.png)
+
+The Hough screenshots use a Canny edge map as input and draw detected lines
+over the original image. The comparison view shows the custom accumulator
+result beside the OpenCV reference.
 
 ### Circle detection
 

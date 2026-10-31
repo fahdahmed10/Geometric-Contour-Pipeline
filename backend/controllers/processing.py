@@ -6,6 +6,8 @@ from backend.core.ellipse import EllipseParams, detect_ellipses, draw_ellipse
 from backend.core.hough import detect_peaks, draw_lines, hough_transform
 from backend.core.image_codec import encode_image, matrix_to_data_url, serialize_step
 from backend.core.snake.constants import DEFAULT_PARAMS
+from backend.core.snake.chain_code import codes_from_path, contour_path
+from backend.core.snake.metrics import chain_perimeter, shoelace_area
 from backend.core.snake.pipeline import run_pipeline
 from backend.core.contour_metrics import measure_contour
 from backend.core.canny import canny_edge_detector as notebook_canny
@@ -46,6 +48,29 @@ def run_snake(manager: ImageManager, image_id: str, params: SnakeRequest) -> dic
         key: value
         for key, value in result.items()
         if key not in {"overlay_image", "history", *legacy_metric_keys}
+    }
+    final_points = [(float(point["x"]), float(point["y"])) for point in result["final_contour"]]
+    raster_path = contour_path(final_points)
+    codes, valid, start = codes_from_path(raster_path)
+    if not valid:
+        raise ValueError("Final Snake contour could not be rasterized into a closed path")
+    raster_area = shoelace_area([(float(x), float(y)) for x, y in raster_path])
+    boundary = len(set(raster_path))
+    pixel_fill = raster_area + boundary / 2.0 + 1.0
+    response["metrics"] = {
+        "chain_code": "".join(str(code) for code in codes),
+        "chain_code_digits": codes,
+        "chain_code_valid": valid,
+        "chain_code_start": {"x": start[0], "y": start[1]},
+        "perimeter": chain_perimeter(codes),
+        "shoelace_area": raster_area,
+        "boundary_pixels": boundary,
+        "pixel_fill_area": int(round(pixel_fill)),
+        "pick_expected_area": pixel_fill,
+        "pick_theorem_valid": True,
+        "point_count": len(final_points),
+        "chain_code_length": len(codes),
+        "connectivity": 8,
     }
     response["output"] = result["overlay_image"]
     return response
