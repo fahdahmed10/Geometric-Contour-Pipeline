@@ -1,6 +1,16 @@
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
-from backend.controllers.processing import run_canny, run_canny_comparison, run_circle, run_contour_metrics, run_ellipse, run_hough, run_snake
+from backend.controllers.processing import (
+    run_canny,
+    run_canny_comparison,
+    run_circle,
+    run_circle_opencv,
+    run_contour_metrics,
+    run_ellipse,
+    run_ellipse_opencv,
+    run_hough,
+    run_snake,
+)
 from backend.core.image_codec import decode_image, matrix_to_data_url
 from backend.models.image_manager import image_manager
 from backend.models.schemas import CannyComparisonRequest, CannyParameters, CannyRequest, CircleRequest, ContourMetricsRequest, EllipseParameters, EllipseRequest, HoughParameters, HoughRequest, ImageResponse, PipelineRequest, ProcessResponse
@@ -145,6 +155,59 @@ def process_circle(image_id: str, params: CircleRequest) -> dict[str, object]:
             canny_params=canny_params,
         )
         image_manager.cache(image_id, f"circle_output_{params.output_slot}", result.pop("_output_matrix"))
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
+@router.post("/images/{image_id}/ellipse/compare")
+def compare_ellipse(image_id: str, params: EllipseRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    if params.input_source == "canny":
+        edges = session.cache.get("latest_canny")
+        canny_data = session.cache.get("latest_canny_params")
+    else:
+        slot = params.input_source[-1]
+        edges = session.cache.get(f"canny_output_{slot}")
+        canny_data = session.cache.get(f"canny_params_output_{slot}")
+    if edges is None:
+        raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Canny input")
+    try:
+        ellipse_params = EllipseParameters(
+            **params.model_dump(
+                exclude={"input_source", "output_slot", "compare_opencv", "resize_input", "canny"}
+            )
+        )
+        canny_params = CannyParameters(**canny_data) if isinstance(canny_data, dict) else None
+        result = run_ellipse_opencv(
+            session.original,
+            edges,
+            ellipse_params,
+            canny_params=canny_params if params.input_source == "canny" else None,
+            resize_input=params.resize_input,
+        )
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"image_id": image_id, **result}
+
+
+@router.post("/images/{image_id}/circle/compare")
+def compare_circle(image_id: str, params: CircleRequest) -> dict[str, object]:
+    session = _session_or_404(image_id)
+    if params.input_source == "canny":
+        edges = session.cache.get("latest_canny")
+        blurred = session.cache.get("latest_canny_blur")
+        canny_data = session.cache.get("latest_canny_params")
+    else:
+        slot = params.input_source[-1]
+        edges = session.cache.get(f"canny_output_{slot}")
+        blurred = session.cache.get(f"canny_blur_output_{slot}")
+        canny_data = session.cache.get(f"canny_params_output_{slot}")
+    if edges is None or blurred is None:
+        raise HTTPException(status_code=409, detail="Run Canny first or choose a populated Canny input")
+    try:
+        canny_params = CannyParameters(**canny_data) if isinstance(canny_data, dict) else None
+        result = run_circle_opencv(session.original, edges, blurred, params, canny_params=canny_params)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"image_id": image_id, **result}

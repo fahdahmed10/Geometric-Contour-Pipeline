@@ -76,21 +76,10 @@ class CircleRequest(BaseModel):
     min_inliers: int = Field(80, ge=5, le=100000)
     seed: int = Field(0, ge=0, le=99)
 
-    # Optional OpenCV comparison controls. None keeps the notebook-derived
-    # value (based on the selected custom detector and Canny settings).
-    opencv_dp: float = Field(1.0, ge=0.5, le=3.0)
-    opencv_min_dist: float | None = Field(None, ge=1.0, le=10000.0)
-    opencv_param1: float | None = Field(None, ge=1.0, le=1000.0)
-    opencv_param2: float | None = Field(None, ge=1.0, le=1000.0)
-    opencv_min_radius: float | None = Field(None, ge=1.0, le=10000.0)
-    opencv_max_radius: float | None = Field(None, ge=1.0, le=10000.0)
-
     @model_validator(mode="after")
     def validate_diameter_range(self):
         if self.min_diam > self.max_diam:
             raise ValueError("min_diam must be less than or equal to max_diam")
-        if self.opencv_min_radius is not None and self.opencv_max_radius is not None and self.opencv_min_radius > self.opencv_max_radius:
-            raise ValueError("opencv_min_radius must be less than or equal to opencv_max_radius")
         return self
 
 

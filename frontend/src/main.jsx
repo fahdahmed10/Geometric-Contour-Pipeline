@@ -9,7 +9,6 @@ const initialEllipse = { a_min: 10, a_max: 150, vote_threshold: 40, fit_tol: 2, 
 const initialCircle = {
   cht: { min_diam: 150, max_diam: 260, min_votes: 80, min_coverage: 0.55, perim_frac: 0.45, smooth: 3, nms_win: 11, align_cos: 0.7, refine: true },
   ransac: { min_diam: 150, max_diam: 260, tol: 2, max_iter: 1000, min_inliers: 80, perim_frac: 0.45, min_coverage: 0.65, refine: true, seed: 0 },
-  opencv: { dp: 1, min_dist: 80, param1: 200, param2: 48, min_radius: 75, max_radius: 130 },
 };
 const initialSnake = { alpha: 1, beta: 1, gamma: 1.2, n_points: 20, window_size: 5, max_iterations: 200 };
 
@@ -357,6 +356,16 @@ function CircleSummaryBlock({ label, title, count, parameters, className = "" })
           <small>circles</small>
         </strong>
       </div>
+      <ParameterList parameters={parameters} />
+    </div>
+  );
+}
+
+function LinkedCircleOpenCVPanel({ algorithm, parameters }) {
+  return (
+    <div className="opencv-linked-panel">
+      <span className="eyebrow">LINKED OPENCV PARAMETERS</span>
+      <p>Derived from the selected {algorithm === "cht" ? "CHT" : "RANSAC 3-point"} settings and Canny output.</p>
       <ParameterList parameters={parameters} />
     </div>
   );
@@ -739,6 +748,7 @@ function renderSnakeOverlayDataUrl(originalSrc, snakeRes, thickness, verticesFla
 
 function App() {
   const fileInputRef = useRef(null);
+  const liveComparisonRequestRef = useRef(0);
   const [hydrated, setHydrated] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem("contour-lab-theme") || "dark");
   const [activeTab, setActiveTab] = useState("canny");
@@ -1056,11 +1066,6 @@ function App() {
       ...state,
       [circleAlgorithm]: { ...state[circleAlgorithm], [event.target.name]: Number(event.target.value) },
     }));
-  const updateOpenCV = (event) =>
-    setCircle((state) => ({
-      ...state,
-      opencv: { ...state.opencv, [event.target.name]: Number(event.target.value) },
-    }));
   const toggleCircleRefine = () =>
     setCircle((state) => ({
       ...state,
@@ -1334,6 +1339,7 @@ function App() {
 
   async function runEllipse() {
     if (!original || ellipse.a_min > ellipse.a_max) return;
+    liveComparisonRequestRef.current += 1;
     setBusy("ellipse");
     setError("");
     try {
@@ -1381,6 +1387,7 @@ function App() {
 
   async function runCircle() {
     if (!original) return;
+    liveComparisonRequestRef.current += 1;
     setBusy("circle");
     setError("");
     const selectedCircle = circle[circleAlgorithm];
@@ -1394,12 +1401,6 @@ function App() {
         body: JSON.stringify({
           algorithm: circleAlgorithm,
           ...selectedCircle,
-          opencv_dp: circle.opencv.dp,
-          opencv_min_dist: circle.opencv.min_dist,
-          opencv_param1: circle.opencv.param1,
-          opencv_param2: circle.opencv.param2,
-          opencv_min_radius: circle.opencv.min_radius,
-          opencv_max_radius: circle.opencv.max_radius,
           input_source: circleInput,
           output_slot: circleSlot,
           compare_opencv: compareCircle,
@@ -1435,6 +1436,71 @@ function App() {
       setBusy("");
     }
   }
+
+  async function refreshEllipseComparison() {
+    const slot = ellipseComparisonSlot;
+    if (!original || !ellipseRuns[slot] || ellipse.a_min > ellipse.a_max) return;
+    const requestId = ++liveComparisonRequestRef.current;
+    try {
+      const activeId = await ensureBackendSession();
+      const response = await fetch(`${API}/images/${activeId}/ellipse/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...ellipse,
+          input_source: ellipseInput,
+          output_slot: slot,
+          compare_opencv: true,
+          resize_input: true,
+          canny,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Ellipse comparison failed");
+      if (requestId !== liveComparisonRequestRef.current) return;
+      setEllipseRuns((state) => (state[slot] ? { ...state, [slot]: { ...state[slot], ...data } } : state));
+    } catch (caught) {
+      if (requestId === liveComparisonRequestRef.current) setError(caught.message);
+    }
+  }
+
+  async function refreshCircleComparison() {
+    const slot = circleComparisonSlot;
+    if (!original || !circleRuns[slot]) return;
+    const requestId = ++liveComparisonRequestRef.current;
+    try {
+      const activeId = await ensureBackendSession();
+      const response = await fetch(`${API}/images/${activeId}/circle/compare`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          algorithm: circleAlgorithm,
+          ...circle[circleAlgorithm],
+          input_source: circleInput,
+          output_slot: slot,
+          compare_opencv: true,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Circle comparison failed");
+      if (requestId !== liveComparisonRequestRef.current) return;
+      setCircleRuns((state) => (state[slot] ? { ...state, [slot]: { ...state[slot], ...data } } : state));
+    } catch (caught) {
+      if (requestId === liveComparisonRequestRef.current) setError(caught.message);
+    }
+  }
+
+  useEffect(() => {
+    if (!hydrated || !original || !ellipseRuns[ellipseComparisonSlot]) return undefined;
+    const timer = window.setTimeout(() => refreshEllipseComparison(), 250);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, original, ellipse, ellipseInput, ellipseComparisonSlot]);
+
+  useEffect(() => {
+    if (!hydrated || !original || !circleRuns[circleComparisonSlot]) return undefined;
+    const timer = window.setTimeout(() => refreshCircleComparison(), 250);
+    return () => window.clearTimeout(timer);
+  }, [hydrated, original, circle[circleAlgorithm], circleInput, circleAlgorithm, circleComparisonSlot, cannyResult]);
 
   async function runSnake() {
     if (!original) return;
@@ -1502,7 +1568,20 @@ function App() {
   const selectedCircleInput =
     (circleInput === "canny" ? cannyResult?.output : cannySlots[circleInput.replace("output", "")]) || original;
   const activeCircle = circle[circleAlgorithm];
-  const opencvBoundsValid = circle.opencv.min_radius <= circle.opencv.max_radius;
+  const linkedCircleOpenCV = (() => {
+    const minRadius = 0.85 * activeCircle.min_diam / 2;
+    const maxRadius = 1.15 * activeCircle.max_diam / 2;
+    const evidence = circleAlgorithm === "cht" ? activeCircle.min_votes : activeCircle.min_inliers;
+    const cannyParameters = cannyResult?.parameters || canny;
+    return {
+      dp: 1,
+      minDist: Math.max(5, minRadius),
+      param1: cannyParameters.high_threshold,
+      param2: evidence,
+      minRadius: Math.floor(minRadius),
+      maxRadius: Math.ceil(maxRadius),
+    };
+  })();
 
   const customCircleSummary = (run) => {
     if (!run) return null;
@@ -1722,8 +1801,7 @@ function App() {
                   disabled={
                     !hasImage ||
                     Boolean(busy) ||
-                    activeCircle.min_diam > activeCircle.max_diam ||
-                    (compareCircle && !opencvBoundsValid)
+                    activeCircle.min_diam > activeCircle.max_diam
                   }
                   onClick={runCircle}
                 >
@@ -2174,18 +2252,11 @@ function App() {
                 title={`${(circleComparison?.algorithm || circleAlgorithm) === "cht" ? "Circular Hough" : "RANSAC"} circle overlay`}
                 custom={circleComparison?.output}
                 opencv={circleComparison?.opencv_output}
-                metric="Same Canny blur · configurable OpenCV HoughCircles"
+                 metric="Same Canny blur · linked to selected from-scratch parameters"
                 slot={circleComparisonSlot}
                 onSlotChange={setCircleComparisonSlot}
                 extraControls={
-                  <div className="opencv-inline-bar">
-                    <Slider label="dp" name="dp" value={circle.opencv.dp} min="0.5" max="3" step="0.1" onChange={updateOpenCV} />
-                    <Slider label="minDist" name="min_dist" value={circle.opencv.min_dist} min="1" max="500" onChange={updateOpenCV} suffix="px" />
-                    <Slider label="param1" name="param1" value={circle.opencv.param1} min="1" max="1000" onChange={updateOpenCV} />
-                    <Slider label="param2" name="param2" value={circle.opencv.param2} min="1" max="1000" onChange={updateOpenCV} />
-                    <Slider label="minR" name="min_radius" value={circle.opencv.min_radius} min="1" max="1000" onChange={updateOpenCV} suffix="px" />
-                    <Slider label="maxR" name="max_radius" value={circle.opencv.max_radius} min="1" max="1000" onChange={updateOpenCV} suffix="px" />
-                  </div>
+                  <LinkedCircleOpenCVPanel algorithm={circleAlgorithm} parameters={linkedCircleOpenCV} />
                 }
                 customSummary={
                   circleComparison && (

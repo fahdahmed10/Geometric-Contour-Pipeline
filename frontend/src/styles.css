@@ -952,6 +952,25 @@ html.light .history-hover-overlay {
   flex-shrink: 0;
 }
 
+.opencv-linked-panel {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+.opencv-linked-panel p {
+  margin: 0;
+  color: var(--muted);
+  font: 400 0.68rem "DM Mono", monospace;
+}
+
+.opencv-linked-panel .circle-parameter-list {
+  gap: 5px;
+}
+
 .comparison-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

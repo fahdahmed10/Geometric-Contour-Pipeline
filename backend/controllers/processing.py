@@ -415,6 +415,51 @@ def run_ellipse(
     return result
 
 
+def run_ellipse_opencv(
+    original: np.ndarray,
+    edges: np.ndarray,
+    params: EllipseParameters,
+    canny_params: CannyParameters | None = None,
+    resize_input: bool = True,
+) -> dict[str, object]:
+    """Refresh only the OpenCV ellipse comparison for an existing Canny map."""
+    if resize_input:
+        processed_original, processed_edges, resize_scale = _resize_for_notebook(original, edges)
+    else:
+        processed_original = original.copy()
+        processed_edges = np.asarray(edges) > 0
+        resize_scale = 1.0
+
+    detector_params = EllipseParams(
+        a_min=params.a_min,
+        a_max=params.a_max,
+        min_points=params.vote_threshold,
+        fit_tol=params.fit_tol,
+        min_support=params.min_support,
+        max_ellipses=params.max_ellipses,
+        ransac_iters=params.ransac_iters,
+    )
+    opencv_ellipses = _opencv_ellipse_detect(processed_edges, detector_params)
+    opencv_overlay = processed_original.copy()
+    for ellipse in opencv_ellipses:
+        draw_ellipse(opencv_overlay, ellipse, (255, 70, 70), thickness=2)
+    annotated_overlay = _annotate_ellipse_overlay(
+        opencv_overlay,
+        params,
+        resize_scale,
+        canny_params if resize_input and canny_params is not None else None,
+        "OPENCV ELLIPSE REFERENCE",
+    )
+    return {
+        "opencv_output": matrix_to_data_url(annotated_overlay, color=True),
+        "opencv_steps": {
+            "input_edges": serialize_step(processed_edges),
+            "ellipse_overlay": serialize_step(annotated_overlay),
+        },
+        "opencv_ellipses": opencv_ellipses,
+    }
+
+
 def _draw_circle_overlay(
     original: np.ndarray,
     circles: list[dict[str, float]],
@@ -449,6 +494,28 @@ def _draw_circle_overlay(
     # them out of the image prevents tiny text after the result is scaled into
     # an output card.
     return overlay
+
+
+def _linked_circle_opencv_parameters(
+    params: CircleRequest,
+    canny_params: CannyParameters | None,
+) -> dict[str, float | int]:
+    """Map the selected from-scratch detector settings to HoughCircles.
+
+    OpenCV's parameter names and scoring are different, so only equivalent
+    values are linked directly.  The custom evidence threshold is carried
+    over as param2; dp remains the neutral OpenCV resolution of 1.0.
+    """
+    r_min, r_max = diameter_to_radii(params.min_diam, params.max_diam)
+    evidence = params.min_votes if params.algorithm == "cht" else params.min_inliers
+    return {
+        "dp": 1.0,
+        "minDist": max(5.0, r_min),
+        "param1": canny_params.high_threshold if canny_params is not None else 200.0,
+        "param2": float(evidence),
+        "minRadius": int(np.floor(r_min)),
+        "maxRadius": int(np.ceil(r_max)),
+    }
 
 
 def run_circle(
@@ -572,35 +639,24 @@ def run_circle(
         custom_parameters["canny_high"] = canny_params.high_threshold
 
     if compare_opencv:
-        evidence = params.min_votes if params.algorithm == "cht" else params.min_inliers
-        opencv_min_dist = params.opencv_min_dist if params.opencv_min_dist is not None else max(5.0, r_min)
-        opencv_param1 = params.opencv_param1 if params.opencv_param1 is not None else (
-            canny_params.high_threshold if canny_params is not None else 200.0
-        )
-        opencv_param2 = params.opencv_param2 if params.opencv_param2 is not None else max(10.0, 0.6 * evidence)
-        opencv_r_min = params.opencv_min_radius if params.opencv_min_radius is not None else r_min
-        opencv_r_max = params.opencv_max_radius if params.opencv_max_radius is not None else r_max
-        if opencv_r_min > opencv_r_max:
-            raise ValueError("opencv_min_radius must be less than or equal to opencv_max_radius")
+        opencv_parameters = _linked_circle_opencv_parameters(params, canny_params)
         opencv_results = opencv_circles(
             blurred_gray,
-            opencv_r_min,
-            opencv_r_max,
-            opencv_min_dist,
-            opencv_param1,
-            opencv_param2,
-            params.opencv_dp,
+            float(opencv_parameters["minRadius"]),
+            float(opencv_parameters["maxRadius"]),
+            float(opencv_parameters["minDist"]),
+            float(opencv_parameters["param1"]),
+            float(opencv_parameters["param2"]),
+            float(opencv_parameters["dp"]),
         )
-        opencv_min_radius = int(np.floor(opencv_r_min))
-        opencv_max_radius = int(np.ceil(opencv_r_max))
         opencv_overlay = _draw_circle_overlay(
             original,
             opencv_results,
             (255, 80, 80),
             "OPENCV HOUGH CIRCLES",
             [
-                f"detected_circles={len(opencv_results)}  dp={params.opencv_dp:.2f}  minDist={opencv_min_dist:.1f}px",
-                f"param1={opencv_param1:.1f}  param2={opencv_param2:.1f}  minRadius={opencv_min_radius}px  maxRadius={opencv_max_radius}px",
+                f"detected_circles={len(opencv_results)}  dp={opencv_parameters['dp']:.2f}  minDist={opencv_parameters['minDist']:.1f}px",
+                f"param1={opencv_parameters['param1']:.1f}  param2={opencv_parameters['param2']:.1f}  minRadius={opencv_parameters['minRadius']}px  maxRadius={opencv_parameters['maxRadius']}px",
                 *([f"canny: kernel={canny_params.kernel_size}  sigma={canny_params.sigma:g}  low={canny_params.low_threshold:g}  high={canny_params.high_threshold:g}"] if canny_params is not None else []),
             ],
         )
@@ -610,12 +666,41 @@ def run_circle(
             "circle_overlay": serialize_step(opencv_overlay),
         }
         result["opencv_circles"] = opencv_results
-        result["opencv_parameters"] = {
-            "dp": params.opencv_dp,
-            "minDist": opencv_min_dist,
-            "param1": opencv_param1,
-            "param2": opencv_param2,
-            "minRadius": opencv_min_radius,
-            "maxRadius": opencv_max_radius,
-        }
+        result["opencv_parameters"] = opencv_parameters
     return result
+
+
+def run_circle_opencv(
+    original: np.ndarray,
+    edges: np.ndarray,
+    blurred: np.ndarray,
+    params: CircleRequest,
+    canny_params: CannyParameters | None = None,
+) -> dict[str, object]:
+    """Refresh only the OpenCV circle comparison for an existing Canny map."""
+    edge_map = np.asarray(edges) > 0
+    blurred_gray = np.asarray(blurred)
+    if edge_map.ndim != 2 or blurred_gray.ndim != 2 or blurred_gray.shape != edge_map.shape:
+        raise ValueError("The selected Canny blur and edge map must have matching shapes")
+
+    opencv_parameters = _linked_circle_opencv_parameters(params, canny_params)
+
+    opencv_results = opencv_circles(
+        blurred_gray,
+        float(opencv_parameters["minRadius"]),
+        float(opencv_parameters["maxRadius"]),
+        float(opencv_parameters["minDist"]),
+        float(opencv_parameters["param1"]),
+        float(opencv_parameters["param2"]),
+        float(opencv_parameters["dp"]),
+    )
+    opencv_overlay = _draw_circle_overlay(original, opencv_results, (255, 80, 80), "OPENCV HOUGH CIRCLES")
+    return {
+        "opencv_output": matrix_to_data_url(opencv_overlay, color=True),
+        "opencv_steps": {
+            "input_edges": serialize_step(edge_map.astype(np.uint8) * 255),
+            "circle_overlay": serialize_step(opencv_overlay),
+        },
+        "opencv_circles": opencv_results,
+        "opencv_parameters": opencv_parameters,
+    }
