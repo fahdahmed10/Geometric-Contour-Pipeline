@@ -318,13 +318,18 @@ def _annotate_ellipse_overlay(
     footer_height = 30 * len(lines) + 18
     annotated = np.full((height + footer_height, width, 3), (12, 14, 12), dtype=np.uint8)
     annotated[:height] = image
+    # Shrink the footer font when the longest line would run past the canvas edge.
+    font_scale = 0.42
+    widest = max(cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)[0][0] for line in lines)
+    if widest > width - 20:
+        font_scale = max(0.2, font_scale * (width - 20) / widest)
     for index, line in enumerate(lines):
         cv2.putText(
             annotated,
             line,
             (10, height + 20 + index * 22),
             cv2.FONT_HERSHEY_SIMPLEX,
-            0.42,
+            font_scale,
             (232, 238, 224),
             1,
             cv2.LINE_AA,

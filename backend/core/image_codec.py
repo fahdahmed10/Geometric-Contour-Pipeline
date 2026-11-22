@@ -37,7 +37,7 @@ def serialize_step(matrix: np.ndarray, display_size: tuple[int, int] | None = No
     if display_size is not None:
         display = cv2.resize(array, display_size, interpolation=cv2.INTER_NEAREST)
     return {
-        "image": matrix_to_data_url(display),
+        "image": matrix_to_data_url(display, color=display.ndim == 3 and display.shape[2] == 3),
         "shape": list(array.shape),
         "min": float(array.min()) if array.size else 0,
         "max": float(array.max()) if array.size else 0,
@@ -50,7 +50,7 @@ def encode_image(matrix: np.ndarray) -> bytes:
     if array.dtype != np.uint8:
         array = np.clip(array, 0, 255).astype(np.uint8)
     if array.ndim == 3:
-        array = cv2.cvtColor(array, cv2.COLOR_RGB2RGBA)
+        array = cv2.cvtColor(array, cv2.COLOR_RGB2BGRA)
     success, buffer = cv2.imencode(".png", array)
     if not success:
         raise ValueError("Unable to encode processing input")

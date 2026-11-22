@@ -1443,18 +1443,28 @@ function App() {
     const requestId = ++liveComparisonRequestRef.current;
     try {
       const activeId = await ensureBackendSession();
-      const response = await fetch(`${API}/images/${activeId}/ellipse/compare`, {
+      const payload = JSON.stringify({
+        ...ellipse,
+        input_source: ellipseInput,
+        output_slot: slot,
+        compare_opencv: true,
+        resize_input: true,
+        canny,
+      });
+      let response = await fetch(`${API}/images/${activeId}/ellipse/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...ellipse,
-          input_source: ellipseInput,
-          output_slot: slot,
-          compare_opencv: true,
-          resize_input: true,
-          canny,
-        }),
+        body: payload,
       });
+      if (response.status === 409) {
+        const ready = await ensureCannyForSource(activeId, ellipseInput);
+        if (!ready) return;
+        response = await fetch(`${API}/images/${activeId}/ellipse/compare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+      }
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Ellipse comparison failed");
       if (requestId !== liveComparisonRequestRef.current) return;
@@ -1470,17 +1480,27 @@ function App() {
     const requestId = ++liveComparisonRequestRef.current;
     try {
       const activeId = await ensureBackendSession();
-      const response = await fetch(`${API}/images/${activeId}/circle/compare`, {
+      const payload = JSON.stringify({
+        algorithm: circleAlgorithm,
+        ...circle[circleAlgorithm],
+        input_source: circleInput,
+        output_slot: slot,
+        compare_opencv: true,
+      });
+      let response = await fetch(`${API}/images/${activeId}/circle/compare`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          algorithm: circleAlgorithm,
-          ...circle[circleAlgorithm],
-          input_source: circleInput,
-          output_slot: slot,
-          compare_opencv: true,
-        }),
+        body: payload,
       });
+      if (response.status === 409) {
+        const ready = await ensureCannyForSource(activeId, circleInput);
+        if (!ready) return;
+        response = await fetch(`${API}/images/${activeId}/circle/compare`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+        });
+      }
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Circle comparison failed");
       if (requestId !== liveComparisonRequestRef.current) return;
@@ -1491,16 +1511,16 @@ function App() {
   }
 
   useEffect(() => {
-    if (!hydrated || !original || !ellipseRuns[ellipseComparisonSlot]) return undefined;
+    if (!hydrated || activeTab !== "ellipse" || subTab !== "compare" || !original || !ellipseRuns[ellipseComparisonSlot]) return undefined;
     const timer = window.setTimeout(() => refreshEllipseComparison(), 250);
     return () => window.clearTimeout(timer);
-  }, [hydrated, original, ellipse, ellipseInput, ellipseComparisonSlot]);
+  }, [hydrated, activeTab, subTab, original, ellipse, ellipseInput, ellipseComparisonSlot]);
 
   useEffect(() => {
-    if (!hydrated || !original || !circleRuns[circleComparisonSlot]) return undefined;
+    if (!hydrated || activeTab !== "circle" || subTab !== "compare" || !original || !circleRuns[circleComparisonSlot]) return undefined;
     const timer = window.setTimeout(() => refreshCircleComparison(), 250);
     return () => window.clearTimeout(timer);
-  }, [hydrated, original, circle[circleAlgorithm], circleInput, circleAlgorithm, circleComparisonSlot, cannyResult]);
+  }, [hydrated, activeTab, subTab, original, circle[circleAlgorithm], circleInput, circleAlgorithm, circleComparisonSlot, cannyResult]);
 
   async function runSnake() {
     if (!original) return;

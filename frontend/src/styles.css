@@ -292,7 +292,7 @@ body,
   white-space: nowrap;
 }
 
-.pill:hover:not(:disabled) {
+.pill:hover:not(:disabled):not(.active) {
   border-color: var(--accent);
   color: var(--text);
 }
@@ -1252,13 +1252,20 @@ html.light .history-hover-overlay {
   body,
   #root,
   .app-shell {
+    width: 100%;
     height: auto;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   .topbar {
     flex-wrap: wrap;
     height: auto;
-    padding: 10px 14px;
+    padding: 10px 12px;
+    gap: 8px 10px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .main-tabs {
     order: 3;
@@ -1266,14 +1273,53 @@ html.light .history-hover-overlay {
     overflow-x: auto;
     padding-bottom: 4px;
   }
+  .main-tab {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    overflow: visible;
+  }
+  .sidebar {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+    overflow: visible;
+  }
+  .history-panel {
+    max-height: 240px;
+  }
+  .stage-viewport {
+    height: auto;
+    overflow: visible;
+  }
+  .subtab-bar {
+    height: auto;
+    padding: 0 10px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .subtabs {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .subtab {
+    padding: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .viewport-content {
+    padding: 12px;
     overflow: visible;
   }
   .viewer-grid,
   .comparison-grid,
-  .evolution-layout {
-    grid-template-columns: 1fr;
+  .evolution-layout,
+  .stage-grid {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .metrics-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .card-media {
     min-height: 260px;
